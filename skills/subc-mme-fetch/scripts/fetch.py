@@ -27,7 +27,7 @@ from weather_skills_core.standard_utils import bbox_subset
 from weather_skills_core.units import to_standard_units
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "0.0.1"
+_SKILL_VERSION = "0.0.2"
 
 SUBC_BASE = "https://data.chc.ucsb.edu/experimental/SubC"
 DEFAULT_WORKERS = 4
