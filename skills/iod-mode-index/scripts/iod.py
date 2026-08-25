@@ -19,7 +19,7 @@ from weather_skills_core.standard_utils import bbox_subset, latitude_weights
 from weather_skills_core.units import dequantify_dataset
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "0.0.2"
+_SKILL_VERSION = "0.0.3"
 
 # Classic IOD / Dipole Mode Index boxes (Saji et al.).
 # West: 50–70E, 10S–10N. East: 90–110E, 10S–0.
