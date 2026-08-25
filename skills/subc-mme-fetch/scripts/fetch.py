@@ -27,7 +27,7 @@ from weather_skills_core.standard_utils import bbox_subset
 from weather_skills_core.units import to_standard_units
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "0.0.2"
+_SKILL_VERSION = "0.0.3"
 
 SUBC_BASE = "https://data.chc.ucsb.edu/experimental/SubC"
 DEFAULT_WORKERS = 4
@@ -170,13 +170,16 @@ def fetch(date, bbox, variable, workers, **kwargs):
     if bbox is not None:
         ds = bbox_subset(ds, bbox)
 
+    # Overwrite long_name: source NetCDFs embed the window length
+    # ("MME 7-day window anomaly…"), and xr.concat keeps attrs from the first
+    # lead — which would mislabel 15-/30-day panels on plot.
     for name in ds.data_vars:
         if name == "pr" or name.startswith("pr_"):
             ds[name].attrs.setdefault("units", "mm")
-            ds[name].attrs.setdefault("long_name", f"SubC MME {name}")
+            ds[name].attrs["long_name"] = f"SubC MME {name}"
         else:
             ds[name].attrs.setdefault("units", "K")
-            ds[name].attrs.setdefault("long_name", f"SubC MME {name}")
+            ds[name].attrs["long_name"] = f"SubC MME {name}"
 
     ds.attrs["Conventions"] = "CF-1.13"
     ds.attrs["weather_skills_source"] = "chc-subc-mme"

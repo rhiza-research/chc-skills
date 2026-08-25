@@ -78,6 +78,14 @@ documented as degree C when the input is in °C/K-converted):
 Lat/lon are collapsed; `step`, `time`, ensemble `number`, and other non-spatial
 dims are kept.
 
+## Plotting guidance
+
+Typical DMI values fall roughly in **−4 to +4** (°C / K anomaly difference).
+When plotting `iod_mode_index` (mediogram, timeseries, or heatmap of related
+anomaly maps), prefer a fixed, symmetric color/axis range around that span
+(e.g. `vmin=-4`, `vmax=4`) rather than autoscaling to the data min/max — that
+keeps weak and strong events comparable across leads and inits.
+
 ## Example: SubC MME surface-temperature anomaly
 
 ```bash
