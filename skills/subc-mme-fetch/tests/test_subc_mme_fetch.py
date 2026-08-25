@@ -27,6 +27,13 @@ def _fake_nc(*, kind: str, var: str, fill: float, window_days: int) -> xr.Datase
         },
     )
     ds[src].attrs["units"] = "mm" if var == "pr" else "K"
+    # Mimic source NetCDFs, which embed window length in long_name.
+    kind_label = "mean" if kind == "mean" else "anomaly"
+    ds[src].attrs["long_name"] = (
+        f"MME {window_days}-day window {kind_label} (forecast mean minus climo)"
+        if kind == "anom"
+        else f"MME {window_days}-day window mean"
+    )
     return ds
 
 
@@ -85,6 +92,9 @@ def test_fetch_stitches_leads_and_vars(mod, monkeypatch, tmp_path):
     assert float(ds["ts"].isel(step=0).mean()) == pytest.approx(7.0)
     assert float(ds["ts"].isel(step=2).mean()) == pytest.approx(30.0)
     assert float(ds["ts_anomaly"].isel(step=0).mean()) == pytest.approx(7.1)
+    assert ds["ts_anomaly"].attrs["long_name"] == "SubC MME ts_anomaly"
+    assert "7-day" not in ds["ts_anomaly"].attrs["long_name"]
+    assert ds["pr"].attrs["long_name"] == "SubC MME pr"
 
 
 def test_missing_file_raises(mod, monkeypatch, tmp_path):

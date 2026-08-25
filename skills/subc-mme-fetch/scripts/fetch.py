@@ -170,13 +170,16 @@ def fetch(date, bbox, variable, workers, **kwargs):
     if bbox is not None:
         ds = bbox_subset(ds, bbox)
 
+    # Overwrite long_name: source NetCDFs embed the window length
+    # ("MME 7-day window anomaly…"), and xr.concat keeps attrs from the first
+    # lead — which would mislabel 15-/30-day panels on plot.
     for name in ds.data_vars:
         if name == "pr" or name.startswith("pr_"):
             ds[name].attrs.setdefault("units", "mm")
-            ds[name].attrs.setdefault("long_name", f"SubC MME {name}")
+            ds[name].attrs["long_name"] = f"SubC MME {name}"
         else:
             ds[name].attrs.setdefault("units", "K")
-            ds[name].attrs.setdefault("long_name", f"SubC MME {name}")
+            ds[name].attrs["long_name"] = f"SubC MME {name}"
 
     ds.attrs["Conventions"] = "CF-1.13"
     ds.attrs["weather_skills_source"] = "chc-subc-mme"
