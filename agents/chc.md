@@ -23,8 +23,8 @@ weather-skills transforms and plotters when those are available (for example
 ## CHC-specific notes
 
 - **`subc-mme-fetch`** pulls the CHC SubC multi-model ensemble global archive
-  for one init date and stitches 7/15/30-day mean and anomaly fields into a
-  forecast envelope Zarr.
+  from `gs://sheerwater-public-datalake/chc-mirror` for one init date and
+  stitches 7/15/30-day mean and anomaly fields into a forecast envelope Zarr.
 - **`iod-mode-index`** needs a **pre-computed** temperature anomaly field. If
   anomalies are missing, compute them (climatology + `difference`) first. For
   maps of SST or precip over the Indian Ocean, prefer plotting with an Indian
