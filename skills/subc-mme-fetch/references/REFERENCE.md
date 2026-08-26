@@ -9,6 +9,10 @@ HTTPS:
 
 `https://storage.googleapis.com/sheerwater-public-datalake/chc-mirror/experimental/SubC/`
 
+Fallback origin (used when a mirror object is missing):
+
+`https://data.chc.ucsb.edu/experimental/SubC/`
+
 Paths mirror `data.chc.ucsb.edu/experimental/SubC/` exactly.
 
 ## Outlook folders

@@ -2,7 +2,7 @@
 name: subc-mme-fetch
 description: Fetch one CHC SubC multi-model-ensemble (MME) outlook — 7d, 15d, or 30d — for selected climate variables (pr/tas/tasmax/tasmin/tdps/ts mean + anomaly) from the public global archive into a weather-skills forecast Zarr. Use when a task needs a single SubC MME outlook map for clipping, comparison, or plotting; use --probe-latest with a variable to find the latest published init.
 license: MIT
-compatibility: Requires Python 3.12 and uv. Fetches over HTTPS from the public GCS mirror gs://sheerwater-public-datalake/chc-mirror (SubC layout matches data.chc.ucsb.edu); no credentials required.
+compatibility: Requires Python 3.12 and uv. Fetches the public GCS mirror first (gs://sheerwater-public-datalake/chc-mirror), then falls back to data.chc.ucsb.edu. No credentials required.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py *)
 metadata:
   catalog-group: fetchers
@@ -39,6 +39,10 @@ HTTPS equivalent:
 ```
 https://storage.googleapis.com/sheerwater-public-datalake/chc-mirror/experimental/SubC/...
 ```
+
+If a file is missing on the mirror, fetch falls back to
+`https://data.chc.ucsb.edu/experimental/SubC/`. `--probe-latest` lists the
+GCS mirror (JSON API), not the origin HTML index.
 
 Each NetCDF is a single 2D window field. This skill fetches mean + anomaly for
 the selected climate variables at **one** outlook only (not all three leads).

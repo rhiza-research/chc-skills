@@ -39,6 +39,9 @@ _BUCKET = "sheerwater-public-datalake"
 _MIRROR_PREFIX = "chc-mirror/experimental/SubC"
 _GCS_API = f"https://storage.googleapis.com/storage/v1/b/{_BUCKET}/o"
 _GCS_MEDIA = f"https://storage.googleapis.com/{_BUCKET}"
+SUBC_BASE = f"{_GCS_MEDIA}/{_MIRROR_PREFIX}"
+CHC_BASE = "https://data.chc.ucsb.edu/experimental/SubC"
+_USER_AGENT = "weather-skills/subc-mme-fetch"
 DEFAULT_WORKERS = 4
 _HTTP_TIMEOUT = 60
 
@@ -85,24 +88,35 @@ def _archive_list_prefix(folder: str, lead_tag: str, var: str) -> str:
     return f"{_MIRROR_PREFIX}/{folder}/global/archive/mme_mean_{var}_{lead_tag}_"
 
 
-def _open_remote(url: str) -> xr.Dataset:
-    """Open a SubC NetCDF from the public GCS mirror with xarray.
+def _candidate_urls(url: str) -> list[str]:
+    """GCS mirror first; CHC origin if the URL is on the mirror prefix."""
+    urls = [url]
+    if url.startswith(SUBC_BASE):
+        urls.append(CHC_BASE + url[len(SUBC_BASE) :])
+    return urls
 
-    Uses fsspec ``simplecache`` so netCDF4 opens a local materialized copy
-    (same pattern as the legacy CHC HTTPS archive).
+
+def _open_remote(url: str) -> xr.Dataset:
+    """Open a SubC NetCDF. GCS mirror first, then CHC origin.
+
+    Uses fsspec ``simplecache`` so netCDF4 opens a local materialized copy.
     """
     import fsspec
 
-    try:
-        path = fsspec.open_local(f"simplecache::{url}")
-    except FileNotFoundError as exc:
-        raise DataError(f"SubC archive file not found: {url}") from exc
-    except Exception as exc:
-        raise DataError(f"failed to open {url}: {exc}") from exc
-    try:
-        return xr.open_dataset(path, engine="netcdf4")
-    except Exception as exc:
-        raise DataError(f"failed to open {url}: {exc}") from exc
+    last_missing: Exception | None = None
+    for i, candidate in enumerate(_candidate_urls(url)):
+        opts: dict = {}
+        if i:
+            opts["https"] = {"client_kwargs": {"headers": {"User-Agent": _USER_AGENT}}}
+        try:
+            path = fsspec.open_local(f"simplecache::{candidate}", **opts)
+            return xr.open_dataset(path, engine="netcdf4")
+        except FileNotFoundError as exc:
+            last_missing = exc
+            continue
+        except Exception as exc:
+            raise DataError(f"failed to open {candidate}: {exc}") from exc
+    raise DataError(f"SubC archive file not found: {url}") from last_missing
 
 
 def _normalize_field(ds: xr.Dataset, *, kind: str, var: str) -> xr.DataArray:

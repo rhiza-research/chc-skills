@@ -21,8 +21,9 @@ position figures. Built on
 uv sync --group dev
 uv run pytest
 
-# SubC MME for one init
-uv run skills/subc-mme-fetch/scripts/fetch.py --date 2025-12-01 -o /tmp/subc.zarr
+# Latest published 7-day SubC init, then fetch it
+INIT=$(uv run skills/subc-mme-fetch/scripts/fetch.py --outlook 7d --probe-latest ts)
+uv run skills/subc-mme-fetch/scripts/fetch.py --date "$INIT" --outlook 7d -o /tmp/subc.zarr
 
 # IOD from a temperature-anomaly field (forecast or observations)
 uv run skills/iod-mode-index/scripts/iod.py \
