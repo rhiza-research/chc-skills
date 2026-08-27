@@ -1,7 +1,8 @@
 # CHC Skills
 
 Climate Hazards Center (CHC) skills for SubC multi-model-ensemble forecasts,
-Indian Ocean Dipole (IOD) analysis, and CPC MJO forecast diagrams. Built on
+Indian Ocean Dipole (IOD) analysis, CPC MJO forecast diagrams, and Africa ITF
+position figures. Built on
 [`weather-skills-core`](https://github.com/rhiza-research/weather-skills-core)
 (pinned to `combine-dim-ontology-cleanup`).
 
@@ -12,6 +13,7 @@ Indian Ocean Dipole (IOD) analysis, and CPC MJO forecast diagrams. Built on
 | [`subc-mme-fetch`](skills/subc-mme-fetch/) | Fetch and stitch SubC global MME mean + anomaly NetCDFs (7/15/30-day leads) into one forecast Zarr |
 | [`iod-mode-index`](skills/iod-mode-index/) | Dipole Mode Index (West − East) plus west/east box means from a pre-computed temperature anomaly |
 | [`mjo-forecast-fetch`](skills/mjo-forecast-fetch/) | Fetch the latest CPC CLIVAR MJO Wheeler–Hendon phase-space PNG (GEFS / ECMWF / ECMWF extended-range) |
+| [`africa-itf`](skills/africa-itf/) | Fetch the latest NOAA/CPC Africa ITF / ITCZ position PNG for one region (`--location africa\|west-africa\|east-africa`; CPC uses both terms) |
 
 ## Quick start
 
@@ -28,6 +30,9 @@ uv run skills/iod-mode-index/scripts/iod.py \
 
 # Latest CPC MJO phase-space diagram (GEFS, bias-corrected by default)
 uv run skills/mjo-forecast-fetch/scripts/fetch.py --model gefs -o /tmp/mjo.png
+
+# Latest CPC Africa ITF position map (default --location africa)
+uv run skills/africa-itf/scripts/fetch.py -o /tmp/itf_africa.png
 ```
 
 If anomalies are not already in the input, compute them first (climatology +
