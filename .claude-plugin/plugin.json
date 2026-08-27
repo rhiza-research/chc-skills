@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "rhiza-chc",
   "displayName": "CHC Skills",
-  "description": "Climate Hazards Center data skills for SubC forecasts, Indian Ocean Dipole analysis, and CPC MJO forecast diagrams.",
+  "description": "Climate Hazards Center data skills for SubC forecasts, Indian Ocean Dipole analysis, CPC MJO forecast diagrams, and Africa ITF figures.",
   "author": {
     "name": "Rhiza Research",
     "url": "https://github.com/rhiza-research"
@@ -17,9 +17,10 @@
     "SubC",
     "IOD",
     "MJO",
+    "ITF",
     "geospatial",
     "zarr",
     "xarray"
   ],
-  "version": "2026.827.0"
+  "version": "2026.827.1"
 }
