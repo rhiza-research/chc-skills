@@ -27,7 +27,8 @@ def _fake_nc(*, kind: str, var: str, fill: float, window_days: int) -> xr.Datase
         },
     )
     ds[src].attrs["units"] = "mm" if var == "pr" else "K"
-    # Mimic source NetCDFs, which embed window length in long_name.
+    if var == "pr":
+        ds[src].attrs["standard_name"] = "precipitation_flux"
     kind_label = "mean" if kind == "mean" else "anomaly"
     ds[src].attrs["long_name"] = (
         f"MME {window_days}-day window {kind_label} (forecast mean minus climo)"
@@ -44,7 +45,10 @@ def mod():
 
 def test_url_builder(mod):
     url = mod._url("07_day", "mean", "ts", "7d", date(2025, 12, 1))
-    assert url.endswith("/07_day/global/archive/mme_mean_ts_7d_20251201.nc")
+    assert url.startswith("https://storage.googleapis.com/sheerwater-public-datalake/")
+    assert url.endswith(
+        "/chc-mirror/experimental/SubC/07_day/global/archive/mme_mean_ts_7d_20251201.nc"
+    )
 
 
 def test_normalize_field(mod):
@@ -54,15 +58,15 @@ def test_normalize_field(mod):
     assert "latitude" in da.dims and "longitude" in da.dims
 
 
-def test_fetch_stitches_leads_and_vars(mod, monkeypatch, tmp_path):
+def test_fetch_one_outlook(mod, monkeypatch, tmp_path):
     init = date(2025, 12, 1)
+    folder, lead_tag, days = mod.OUTLOOKS["7d"]
     by_url = {}
-    for folder, lead_tag, days in mod.LEADS:
-        for var in ("ts", "pr"):
-            for kind in ("mean", "anom"):
-                url = mod._url(folder, kind, var, lead_tag, init)
-                fill = float(days) + (0.1 if kind == "anom" else 0.0)
-                by_url[url] = _fake_nc(kind=kind, var=var, fill=fill, window_days=days)
+    for var in ("ts", "pr"):
+        for kind in ("mean", "anom"):
+            url = mod._url(folder, kind, var, lead_tag, init)
+            fill = float(days) + (0.1 if kind == "anom" else 0.0)
+            by_url[url] = _fake_nc(kind=kind, var=var, fill=fill, window_days=days)
 
     def fake_open(url: str):
         if url not in by_url:
@@ -76,6 +80,8 @@ def test_fetch_stitches_leads_and_vars(mod, monkeypatch, tmp_path):
         mod.fetch,
         "--date",
         "2025-12-01",
+        "--outlook",
+        "7d",
         "-v",
         "ts",
         "-v",
@@ -85,16 +91,22 @@ def test_fetch_stitches_leads_and_vars(mod, monkeypatch, tmp_path):
     )
     ds = xr.open_zarr(out, consolidated=True)
     assert set(ds.data_vars) == {"ts", "ts_anomaly", "pr", "pr_anomaly"}
-    steps = [np.timedelta64(d, "D") for d in (7, 15, 30)]
-    assert list(ds["step"].values) == steps
+    assert list(ds["step"].values) == [np.timedelta64(7, "D")]
     assert np.issubdtype(ds["step"].dtype, np.timedelta64)
-    assert ds["time"].values == np.datetime64("2025-12-01", "ns")
-    assert float(ds["ts"].isel(step=0).mean()) == pytest.approx(7.0)
-    assert float(ds["ts"].isel(step=2).mean()) == pytest.approx(30.0)
-    assert float(ds["ts_anomaly"].isel(step=0).mean()) == pytest.approx(7.1)
-    assert ds["ts_anomaly"].attrs["long_name"] == "SubC MME ts_anomaly"
+    assert ds["time"].values == np.datetime64("2025-12-08", "ns")
+    assert ds.attrs["initialization_date"] == "2025-12-01"
+    assert ds.attrs["outlook_valid_date"] == "2025-12-08"
+    assert ds.attrs["outlook"] == "7d"
+    assert float(ds["ts"].mean()) == pytest.approx(7.0)
+    assert float(ds["ts_anomaly"].mean()) == pytest.approx(7.1)
+    assert ds["ts_anomaly"].attrs["long_name"] == "SubC MME 7d ts_anomaly"
     assert "7-day" not in ds["ts_anomaly"].attrs["long_name"]
-    assert ds["pr"].attrs["long_name"] == "SubC MME pr"
+    assert float(ds["pr"].mean()) == pytest.approx(7.0)
+    assert float(ds["pr_anomaly"].mean()) == pytest.approx(7.1)
+    assert ds["pr"].attrs["units"] == "mm"
+    assert ds["pr_anomaly"].attrs["units"] == "mm"
+    assert ds["pr"].attrs["standard_name"] == "lwe_thickness_of_precipitation_amount"
+    assert ds["pr_anomaly"].attrs["standard_name"] == "lwe_thickness_of_precipitation_amount"
 
 
 def test_missing_file_raises(mod, monkeypatch, tmp_path):
@@ -105,5 +117,76 @@ def test_missing_file_raises(mod, monkeypatch, tmp_path):
 
     monkeypatch.setattr(mod, "_open_remote", fake_open)
     with pytest.raises(SystemExit) as excinfo:
-        run_skill(mod.fetch, "--date", "2025-12-01", "-v", "ts", "-o", str(tmp_path / "x.zarr"))
+        run_skill(
+            mod.fetch,
+            "--date",
+            "2025-12-01",
+            "--outlook",
+            "7d",
+            "-v",
+            "ts",
+            "-o",
+            str(tmp_path / "x.zarr"),
+        )
     assert excinfo.value.code == 1
+
+
+def test_probe_latest_with_variable(mod, monkeypatch, capsys):
+    def fake_list(folder, lead_tag, var):
+        assert folder == "07_day"
+        assert lead_tag == "7d"
+        assert var == "ts"
+        return [date(2025, 12, 1), date(2025, 12, 8)]
+
+    monkeypatch.setattr(mod, "_list_init_dates", fake_list)
+    run_skill(mod.fetch, "--outlook", "7d", "--probe-latest", "ts")
+    assert capsys.readouterr().out.strip() == "2025-12-08"
+
+
+def test_probe_latest_all_vars_intersection(mod, monkeypatch, capsys):
+    def fake_list(folder, lead_tag, var):
+        if var == "pr":
+            return [date(2025, 12, 1), date(2025, 12, 8)]
+        return [date(2025, 12, 1), date(2025, 12, 8), date(2025, 12, 15)]
+
+    monkeypatch.setattr(mod, "_list_init_dates", fake_list)
+    run_skill(mod.fetch, "--outlook", "15d", "--probe-latest")
+    # Common max across all six variables (fake returns same for non-pr).
+    assert capsys.readouterr().out.strip() == "2025-12-08"
+
+
+def test_list_init_dates_parses_gcs_listing(mod, monkeypatch):
+    prefix = mod._archive_list_prefix("07_day", "7d", "ts")
+
+    def fake_get_json(url: str):
+        assert "prefix=" in url
+        return {
+            "items": [
+                {"name": f"{prefix}20251201.nc"},
+                {"name": f"{prefix}20251208.nc"},
+                {"name": f"{prefix}20251208.nc.bak"},  # ignored
+            ]
+        }
+
+    monkeypatch.setattr(mod, "_get_json", fake_get_json)
+    dates = mod._list_init_dates("07_day", "7d", "ts")
+    assert dates == [date(2025, 12, 1), date(2025, 12, 8)]
+
+
+def test_list_init_dates_paginates(mod, monkeypatch):
+    prefix = mod._archive_list_prefix("07_day", "7d", "pr")
+    calls = []
+
+    def fake_get_json(url: str):
+        calls.append(url)
+        if "pageToken" not in url:
+            return {
+                "items": [{"name": f"{prefix}20251201.nc"}],
+                "nextPageToken": "tok",
+            }
+        return {"items": [{"name": f"{prefix}20251208.nc"}]}
+
+    monkeypatch.setattr(mod, "_get_json", fake_get_json)
+    dates = mod._list_init_dates("07_day", "7d", "pr")
+    assert dates == [date(2025, 12, 1), date(2025, 12, 8)]
+    assert len(calls) == 2

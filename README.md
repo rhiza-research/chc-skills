@@ -4,7 +4,7 @@ Climate Hazards Center (CHC) skills for SubC multi-model-ensemble forecasts,
 Indian Ocean Dipole (IOD) analysis, CPC MJO forecast diagrams, and Africa ITF
 position figures. Built on
 [`weather-skills-core`](https://github.com/rhiza-research/weather-skills-core)
-(pinned to `combine-dim-ontology-cleanup`).
+(pinned to `main`).
 
 ## Skills
 

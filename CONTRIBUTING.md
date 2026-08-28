@@ -39,5 +39,5 @@ publishes a lean plugin payload to `plugin-dist`. Bump kind comes from PR labels
 tools/run_with_local_core.sh skills/subc-mme-fetch/scripts/fetch.py --help
 ```
 
-Core is pinned to `combine-dim-ontology-cleanup` in `pyproject.toml` and every
+Core is pinned to `main` in `pyproject.toml` and every
 skill script's PEP 723 header.
