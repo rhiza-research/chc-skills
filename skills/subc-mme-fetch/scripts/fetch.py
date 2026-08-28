@@ -32,7 +32,7 @@ from weather_skills_core.standard_utils import bbox_subset
 from weather_skills_core.units import stamp_precip_amounts, to_standard_units
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "0.0.4"
+_SKILL_VERSION = "0.0.5"
 
 # Public GCS mirror of data.chc.ucsb.edu (same paths under chc-mirror/).
 _BUCKET = "sheerwater-public-datalake"
