@@ -3,9 +3,9 @@
 ## Publish model
 
 `main` is the consumer-facing branch. Anything merged to `main` is considered
-published. Each skill script carries a module-level `_SKILL_VERSION` constant —
-the sole source of skill version identity. SKILL.md does **not** carry a version
-field. The version-bump workflow rewrites `_SKILL_VERSION` on merge to `main`.
+published. Each `skills/<name>/SKILL.md` carries a `metadata.version` field (Agent Skills
+spec). That is the published identity. Scripts carry a matching `_SKILL_VERSION`
+constant; the version-bump workflow rewrites both in lockstep.
 
 ## PR workflow
 
@@ -15,7 +15,7 @@ field. The version-bump workflow rewrites `_SKILL_VERSION` on merge to `main`.
 4. Rebase onto `main` before merging — linear history is preferred.
 5. Use the GitHub merge button.
 
-Authors **must not** edit any `_SKILL_VERSION` constant by hand.
+Authors **must not** edit `metadata.version` or `_SKILL_VERSION` by hand.
 
 ## Skill correctness tests
 

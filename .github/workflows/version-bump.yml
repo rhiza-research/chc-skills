@@ -1,6 +1,7 @@
 name: Version bump
 
-# On push to main: bump `_SKILL_VERSION` for changed skills, then publish a lean
+# On push to main: bump SKILL.md `metadata.version` (and the paired
+# `_SKILL_VERSION`) for changed skills, then publish a lean
 # plugin payload to `plugin-dist`. Uses GITHUB_TOKEN (configure a release App later
 # if branch protection requires it).
 
@@ -139,26 +140,27 @@ jobs:
           import sys
           from pathlib import Path
           sys.path.insert(0, str(Path("tools").resolve()))
-          from rhiza_version_re import _VERSION_LINE_RE_VALUE
+          from rhiza_version_re import find_metadata_version_line
 
           skill = sys.argv[1]
-          scripts = Path("skills") / skill / "scripts"
-          values = []
-          for py in sorted(scripts.rglob("*.py")):
-              match = _VERSION_LINE_RE_VALUE.search(py.read_text(encoding="utf-8"))
-              if match:
-                  values.append(match.group("value"))
-          if not values:
-              raise SystemExit(f"{scripts}: no _SKILL_VERSION constant")
-          if len(set(values)) != 1:
-              raise SystemExit(f"{scripts}: disagreeing _SKILL_VERSION values: {values}")
-          print(values[0])
+          text = Path("skills") / skill / "SKILL.md"
+          content = text.read_text(encoding="utf-8")
+          if not content.startswith("---"):
+              raise SystemExit(f"{text}: no YAML frontmatter")
+          end = content.find("\n---", 3)
+          if end < 0:
+              raise SystemExit(f"{text}: no closing --- for frontmatter")
+          front = content[3:end].split("\n")
+          _, raw, _ = find_metadata_version_line(front)
+          if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in ("'", '"'):
+              raw = raw[1:-1]
+          print(raw)
           PY
           }
           while IFS= read -r skill; do
             [ -z "$skill" ] && continue
-            if [ ! -d "skills/${skill}/scripts" ]; then
-              echo "Skipping ${skill}: no scripts/"
+            if [ ! -f "skills/${skill}/SKILL.md" ]; then
+              echo "Skipping ${skill}: no SKILL.md"
               continue
             fi
             old_version=$(read_version "$skill")

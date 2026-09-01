@@ -5,6 +5,7 @@ license: MIT
 compatibility: Requires Python 3.12 and uv. Fetches over HTTPS from www.cpc.ncep.noaa.gov; no credentials required.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py *)
 metadata:
+  version: "0.0.3"
   catalog-group: figure
   availability:
     shape: latest
