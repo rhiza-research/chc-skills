@@ -53,6 +53,9 @@ Bbox form `N/W/S/E`: west `10/50/-10/70`, east `0/90/-10/110`.
    overlay the west and east dipole zones as boxes on the figure using the
    coordinates in the table above.
 
+4. **Official BoM IOD / ENSO observation graphs** (weekly DMI, Niño3.4, SOI
+   PNGs) are `iod-enso-fetch`, not this skill.
+
 ## Usage
 
 ```
