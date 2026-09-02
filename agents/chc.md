@@ -34,12 +34,15 @@ weather-skills transforms and plotters when those are available (for example
   Ocean bbox and optional west/east dipole boxes rather than forcing the index
   skill. For the official BoM IOD / ENSO **observation graphs**, use
   `iod-enso-fetch` instead.
-- **`iod-enso-fetch`** downloads a BoM IOD or ENSO figure
+- **`iod-enso-fetch`** downloads a BoM IOD or ENSO product
   (`--index iod|enso|nino3.4|relative-nino3.4|soi`). `--product observation`
   (default) is the current monitoring timeseries. `--product forecast` is an
-  ACCESS-S plume; omit `--date` for the latest issue or pass `--date` /
+  ACCESS-S outlook; omit `--date` for the latest issue or pass `--date` /
   `--probe-latest` for the outlooks archive. `enso` is Relative Niño3.4
-  (observation) / `rnino34` (forecast from 2025-07-01). Figure-only.
+  (observation) / `rnino34` (forecast from 2025-07-01). `--format figure`
+  (default) writes the PNG; `--format data` or `-o *.zarr` writes official
+  index values (observation text, or ACCESS-S monthly ensemble mean +
+  category frequencies — not the 99-member plume).
 - **`analog-years`** looks up historically similar years for a `--date`
   (ENSO / El Niño analogs, analog-year composites). It is a stub: 2026
   returns `1982 1997 2006 2015 2019 2023`; other years error. Relative

@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import io
+import json
 from datetime import date
 from pathlib import Path
 from urllib.error import HTTPError
 
+import numpy as np
 import pytest
+import xarray as xr
 from conftest import load_skill, run_skill
 from PIL import Image
 from weather_skills_core import DataError, UsageError
@@ -51,6 +54,24 @@ def test_unknown_index_raises(mod):
         mod._image_url("pdo")
 
 
+def _palette_png_bytes(pink=(255, 234, 234), blue=(226, 226, 255)):
+    """BoM-like 8-bit palette PNG: pink upper half, blue lower half."""
+    img = Image.new("P", (400, 300))
+    palette = [0] * (256 * 3)
+    palette[0:3] = pink
+    palette[3:6] = blue
+    palette[6:9] = (255, 255, 255)
+    img.putpalette(palette)
+    pixels = img.load()
+    for y in range(300):
+        index = 0 if y < 150 else 1
+        for x in range(400):
+            pixels[x, y] = index
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue(), pink, blue
+
+
 def test_fetch_writes_png(mod, monkeypatch, tmp_path):
     out = tmp_path / "iod.png"
     seen = {}
@@ -65,6 +86,22 @@ def test_fetch_writes_png(mod, monkeypatch, tmp_path):
     assert Path(out).exists()
     assert seen["url"].endswith("/IDCK000072/iod1.png")
     assert out.read_bytes()[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_fetch_keeps_palette_fills_after_stamp(mod, monkeypatch, tmp_path):
+    raw, pink, blue = _palette_png_bytes()
+    out = tmp_path / "iod.png"
+
+    def fake_download(url, dest, *, referer=None):
+        dest.write_bytes(raw)
+
+    monkeypatch.setattr(mod, "_download", fake_download)
+    run_skill(mod.fetch, "--index", "iod", "-o", str(out))
+
+    rgb = Image.open(out).convert("RGB")
+    # Sample away from the provenance corner mark.
+    assert rgb.getpixel((200, 20)) == pink
+    assert rgb.getpixel((200, 280)) == blue
 
 
 def test_fetch_enso(mod, monkeypatch, tmp_path):
@@ -253,3 +290,162 @@ def test_all_page_indices_registered(mod):
         "relative-nino3.4",
         "soi",
     }
+    assert set(mod.INDEX_DATA_FILES) == set(mod.INDEX_FILES)
+
+
+def test_obs_data_url_mapping(mod):
+    assert mod._obs_data_url("iod").endswith("/IDCK000072/iod_1.txt")
+    assert mod._obs_data_url("enso").endswith("/IDCK000072/rnino_3.4.txt")
+    assert mod._obs_data_url("nino3.4").endswith("/IDCK000072/nino_3.4.txt")
+    assert mod._obs_data_url("soi").endswith("/IDCKGSM000/soi.txt")
+
+
+def test_forecast_data_url(mod):
+    assert mod._forecast_data_url("iod", date(2026, 8, 29)).endswith(
+        "/archive/20260829/plumes/sstOutlooks.iod.json"
+    )
+    assert mod._forecast_data_url("enso", date(2026, 8, 29)).endswith(
+        "/archive/20260829/plumes/sstOutlooks.rnino34.json"
+    )
+    assert mod._forecast_data_url("enso", date(2025, 6, 28)).endswith(
+        "/archive/20250628/plumes/sstOutlooks.nino34.json"
+    )
+
+
+def test_parse_obs_text(mod):
+    times, values = mod._parse_obs_text("20080728,20080803,0.01\n20080804,20080810,0.10\n")
+    assert list(times) == [
+        np.datetime64("2008-08-03", "ns"),
+        np.datetime64("2008-08-10", "ns"),
+    ]
+    assert list(values) == [0.01, 0.10]
+
+
+def test_parse_obs_text_rejects_html(mod):
+    with pytest.raises(DataError, match="HTML"):
+        mod._parse_obs_text("<!DOCTYPE html>")
+
+
+def test_obs_dataset_weekly(mod):
+    ds = mod._obs_dataset("iod", "20080728,20080803,0.01\n20080804,20080810,-0.20\n")
+    assert "iod_mode_index" in ds.data_vars
+    assert ds["iod_mode_index"].attrs["units"] == "degree_Celsius"
+    assert float(ds["iod_mode_index"].isel(time=1)) == pytest.approx(-0.20)
+    assert ds["iod_mode_index"].attrs["data_interval"] == "7 day"
+
+
+def test_obs_dataset_soi_daily(mod):
+    ds = mod._obs_dataset("soi", "20260801,20260830,-14.6\n20260802,20260831,-14.6\n")
+    assert ds["soi"].attrs["units"] == "1"
+    assert ds["soi"].attrs["data_interval"] == "1 day"
+
+
+def test_parse_forecast_json(mod):
+    payload = {
+        "data": {
+            "mean": {"Aug 2026": "NaN", "Sep 2026": 0.6},
+            "frequency": {
+                "Aug 2026": {"below \u22120.4": 0.0, "neutral": 0.0, "above 0.4": 0.0},
+                "Sep 2026": {"below \u22120.4": 0.0, "neutral": 5.05, "above 0.4": 94.95},
+            },
+        }
+    }
+    times, means, freqs = mod._parse_forecast_json(payload)
+    assert list(times) == [
+        np.datetime64("2026-08-01", "ns"),
+        np.datetime64("2026-09-01", "ns"),
+    ]
+    assert np.isnan(means[0])
+    assert means[1] == pytest.approx(0.6)
+    assert freqs["above"][1] == pytest.approx(94.95)
+
+
+def test_forecast_dataset(mod):
+    payload = {
+        "data": {
+            "mean": {"Sep 2026": 0.6},
+            "frequency": {
+                "Sep 2026": {"below -0.4": 0.0, "neutral": 5.0, "above 0.4": 95.0},
+            },
+        }
+    }
+    ds = mod._forecast_dataset("iod", date(2026, 8, 29), payload)
+    assert float(ds["iod_mode_index"].isel(time=0)) == pytest.approx(0.6)
+    assert float(ds["prob_above"].isel(time=0)) == pytest.approx(95.0)
+    assert ds["prob_above"].attrs["units"] == "percent"
+    assert np.datetime64(ds["init_time"].values, "ns") == np.datetime64("2026-08-29", "ns")
+    assert "time_bounds" in ds.coords
+    assert ds["time"].attrs.get("bounds") == "time_bounds"
+
+
+def test_resolve_output_format(mod, tmp_path):
+    assert mod._resolve_output_format(None, tmp_path / "iod.png") == "figure"
+    assert mod._resolve_output_format(None, tmp_path / "iod.zarr") == "data"
+    assert mod._resolve_output_format("data", tmp_path / "iod.zarr") == "data"
+    with pytest.raises(UsageError, match="Zarr"):
+        mod._resolve_output_format("data", tmp_path / "iod.png")
+    with pytest.raises(UsageError, match="PNG"):
+        mod._resolve_output_format("figure", tmp_path / "iod.zarr")
+
+
+def test_fetch_observation_data_zarr(mod, monkeypatch, tmp_path):
+    out = tmp_path / "iod.zarr"
+    seen = {}
+
+    def fake_read(url, *, referer=None, accept=None):
+        seen["url"] = url
+        return b"20080728,20080803,0.01\n20080804,20080810,0.22\n", "text/plain"
+
+    monkeypatch.setattr(mod, "_read_url", fake_read)
+    run_skill(mod.fetch, "--index", "iod", "--format", "data", "-o", str(out))
+    ds = xr.open_zarr(out, consolidated=True)
+    assert seen["url"].endswith("/IDCK000072/iod_1.txt")
+    assert "iod_mode_index" in ds.data_vars
+    assert float(ds["iod_mode_index"].isel(time=1)) == pytest.approx(0.22)
+
+
+def test_fetch_observation_data_inferred_from_zarr_suffix(mod, monkeypatch, tmp_path):
+    out = tmp_path / "enso.zarr"
+
+    def fake_read(url, *, referer=None, accept=None):
+        return b"20080728,20080803,0.20\n", "text/plain"
+
+    monkeypatch.setattr(mod, "_read_url", fake_read)
+    run_skill(mod.fetch, "--index", "enso", "-o", str(out))
+    ds = xr.open_zarr(out, consolidated=True)
+    assert "relative_nino34" in ds.data_vars
+
+
+def test_fetch_forecast_data_zarr(mod, monkeypatch, tmp_path):
+    out = tmp_path / "iod_fc.zarr"
+    seen = {}
+    _archive(mod, monkeypatch, [date(2026, 8, 29)])
+
+    def fake_read(url, *, referer=None, accept=None):
+        seen["url"] = url
+        payload = {
+            "data": {
+                "mean": {"Sep 2026": 0.6},
+                "frequency": {
+                    "Sep 2026": {"below -0.4": 0.0, "neutral": 5.0, "above 0.4": 95.0},
+                },
+            }
+        }
+        return json.dumps(payload).encode(), "application/json"
+
+    monkeypatch.setattr(mod, "_read_url", fake_read)
+    run_skill(
+        mod.fetch,
+        "--index",
+        "iod",
+        "--product",
+        "forecast",
+        "--format",
+        "data",
+        "-o",
+        str(out),
+    )
+    ds = xr.open_zarr(out, consolidated=True)
+    assert seen["url"].endswith("/archive/20260829/plumes/sstOutlooks.iod.json")
+    assert float(ds["iod_mode_index"].isel(time=0)) == pytest.approx(0.6)
+    assert float(ds["prob_above"].isel(time=0)) == pytest.approx(95.0)
