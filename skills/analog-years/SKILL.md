@@ -11,11 +11,16 @@ metadata:
 
 # analog-years
 
-Look up analog years for a calendar date. Prints the years to stdout so they
-can be spliced into later fetches (same season in each analog year).
+Look up **analog years** for a calendar date: past years whose large-scale
+climate state (typically ENSO / El Niño) resembles the target year. Seasonal
+outlooks use those years as a composite — fetch or plot the same season in
+each analog year to see what happened last time conditions looked like this.
+
+Prints the years to stdout so they can be spliced into later fetches.
 
 This is a **stub**. Only dates in **2026** are implemented; other years exit 2.
-The analog set will be computed from data in a later version.
+The 2026 set is a fixed El Niño analog list (1982, 1997, 2006, 2015, 2019,
+2023). A later version will compute analogs from data instead of a table.
 
 ## When to use
 
