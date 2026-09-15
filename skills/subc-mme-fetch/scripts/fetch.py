@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.12,<3.13"
 # dependencies = [
-#   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@main",
+#   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@dev",
 #   "cftime",
 #   "fsspec",
 #   "aiohttp",
@@ -28,7 +28,7 @@ import numpy as np
 import xarray as xr
 from weather_skills_core import DataError, UsageError, weather_skill
 from weather_skills_core.cf import stamp_cf_attrs
-from weather_skills_core.standard_utils import bbox_subset
+from weather_skills_core.standard_utils import bbox_subset, ensure_normalized_longitude
 from weather_skills_core.units import stamp_precip_amounts, to_standard_units
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
@@ -327,6 +327,7 @@ def fetch(date, outlook, bbox, variable, workers, **kwargs):
     ds.attrs["initialization_date"] = init.isoformat()
     ds.attrs["outlook_valid_date"] = valid.isoformat()
     stamp_cf_attrs(ds)
+    ds = ensure_normalized_longitude(ds, lon_dim="longitude")
     stamp_precip_amounts(ds)
     return to_standard_units(ds)
 

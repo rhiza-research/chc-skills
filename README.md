@@ -5,7 +5,7 @@ Indian Ocean Dipole (IOD) analysis, analog years, BoM IOD/ENSO observation
 graphs, CPC MJO forecast diagrams, NCICS MJO / equatorial-wave maps and
 Hovmöllers, and Africa ITF position figures. Built on
 [`weather-skills-core`](https://github.com/rhiza-research/weather-skills-core)
-(pinned to `main`).
+(pinned to `dev`).
 
 ## Skills
 
