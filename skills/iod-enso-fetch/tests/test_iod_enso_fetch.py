@@ -99,9 +99,8 @@ def test_fetch_keeps_palette_fills_after_stamp(mod, monkeypatch, tmp_path):
     run_skill(mod.fetch, "--index", "iod", "-o", str(out))
 
     rgb = Image.open(out).convert("RGB")
-    # Sample away from the provenance corner mark.
-    assert rgb.getpixel((200, 20)) == pink
-    assert rgb.getpixel((200, 280)) == blue
+    assert rgb.getpixel((20, 20)) == pink
+    assert rgb.getpixel((20, 280)) == blue
 
 
 def test_fetch_enso(mod, monkeypatch, tmp_path):
