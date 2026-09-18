@@ -1,6 +1,6 @@
 ---
 name: analog-years
-description: Return historically similar analog years for a given --date (YYYY-MM-DD). Use when a task needs ENSO / El Niño analog years, analog-year composites, or "years like this one". Stub: 2026 returns 1982 1997 2006 2015 2019 2023; any other year is an error.
+description: Return historically similar analog years for a given --date (YYYY-MM-DD). Use when a task needs ENSO / El Niño analog years, analog-year composites, or "years like this one". Stub: 2026 returns 1982 1994 1997 2006 2015 2019 2023; any other year is an error.
 license: MIT
 compatibility: Requires Python 3.12 and uv.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/analog_years.py *)
@@ -19,7 +19,7 @@ each analog year to see what happened last time conditions looked like this.
 Prints the years to stdout so they can be spliced into later fetches.
 
 This is a **stub**. Only dates in **2026** are implemented; other years exit 2.
-The 2026 set is a fixed El Niño analog list (1982, 1997, 2006, 2015, 2019,
+The 2026 set is a fixed El Niño analog list (1982, 1994, 1997, 2006, 2015, 2019,
 2023). A later version will compute analogs from data instead of a table.
 
 ## When to use
@@ -41,7 +41,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/analog_years.py --date YYYY-MM-DD \
 
 ```bash
 YEARS=$(uv run ${CLAUDE_SKILL_DIR}/scripts/analog_years.py --date 2026-09-01)
-# YEARS is "1982 1997 2006 2015 2019 2023"
+# YEARS is "1982 1994 1997 2006 2015 2019 2023"
 for y in $YEARS; do
     echo "$y"
 done
@@ -55,8 +55,8 @@ done
 
 ### Output
 
-- stdout (`years`): `1982 1997 2006 2015 2019 2023`
-- stdout (`json`): `{"date":"2026-09-01","year":2026,"years":[1982,1997,2006,2015,2019,2023]}`
+- stdout (`years`): `1982 1994 1997 2006 2015 2019 2023`
+- stdout (`json`): `{"date":"2026-09-01","year":2026,"years":[1982,1994,1997,2006,2015,2019,2023]}`
 - stderr: `year=2026`
 - Unknown years (not 2026) exit 2 with an explanation.
 
@@ -64,4 +64,4 @@ done
 
 | Input year | Analog years |
 |---|---|
-| 2026 | 1982, 1997, 2006, 2015, 2019, 2023 |
+| 2026 | 1982, 1994, 1997, 2006, 2015, 2019, 2023 |

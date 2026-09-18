@@ -25,14 +25,14 @@ def _run(capsys, analog_years, *argv):
 
 def test_2026_prints_stub_years(capsys, analog_years):
     out, err = _run(capsys, analog_years, "--date", "2026-09-01")
-    assert out == "1982 1997 2006 2015 2019 2023"
+    assert out == "1982 1994 1997 2006 2015 2019 2023"
     assert err == "year=2026"
 
 
 def test_any_day_in_2026_matches(capsys, analog_years):
     a, _ = _run(capsys, analog_years, "--date", "2026-01-01")
     b, _ = _run(capsys, analog_years, "--date", "2026-12-31")
-    assert a == b == "1982 1997 2006 2015 2019 2023"
+    assert a == b == "1982 1994 1997 2006 2015 2019 2023"
 
 
 def test_json_emit(capsys, analog_years):
@@ -41,7 +41,7 @@ def test_json_emit(capsys, analog_years):
     assert payload == {
         "date": "2026-03-15",
         "year": 2026,
-        "years": [1982, 1997, 2006, 2015, 2019, 2023],
+        "years": [1982, 1994, 1997, 2006, 2015, 2019, 2023],
     }
 
 
@@ -61,6 +61,6 @@ def test_missing_date_is_usage_error(analog_years):
 
 
 def test_analogs_for_helper(mod):
-    assert mod.analogs_for(2026) == (1982, 1997, 2006, 2015, 2019, 2023)
+    assert mod.analogs_for(2026) == (1982, 1994, 1997, 2006, 2015, 2019, 2023)
     with pytest.raises(UsageError, match="2024"):
         mod.analogs_for(2024)

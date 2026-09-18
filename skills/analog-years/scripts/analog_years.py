@@ -16,7 +16,7 @@ _SKILL_VERSION = "0.0.2"
 
 # Calendar year → analog years. Stub: only 2026 is populated.
 _ANALOGS = {
-    2026: (1982, 1997, 2006, 2015, 2019, 2023),
+    2026: (1982, 1994, 1997, 2006, 2015, 2019, 2023),
 }
 
 

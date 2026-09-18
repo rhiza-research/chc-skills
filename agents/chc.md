@@ -45,7 +45,7 @@ weather-skills transforms and plotters when those are available (for example
   category frequencies — not the 99-member plume).
 - **`analog-years`** looks up historically similar years for a `--date`
   (ENSO / El Niño analogs, analog-year composites). It is a stub: 2026
-  returns `1982 1997 2006 2015 2019 2023`; other years error. Relative
+  returns `1982 1994 1997 2006 2015 2019 2023`; other years error. Relative
   phrases go through forecasting-skills `resolve-time` first.
 - **`mjo-forecast-fetch`** downloads the latest CPC CLIVAR MJO Wheeler–Hendon
   PNG only (`--model gefs|gefs-extended|cfs|cmc|jma|ecmwf|ecmwf-extended-range|bom`,
