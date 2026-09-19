@@ -5,6 +5,7 @@ license: MIT
 compatibility: Requires Python 3.12 and uv.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/iod.py *)
 metadata:
+  version: "0.0.4"
   catalog-group: transforms
 ---
 
@@ -51,6 +52,9 @@ Bbox form `N/W/S/E`: west `10/50/-10/70`, east `0/90/-10/110`.
    Plot those variables over an Indian Ocean bounding box, and optionally
    overlay the west and east dipole zones as boxes on the figure using the
    coordinates in the table above.
+
+4. **Official BoM IOD / ENSO observation graphs or index values** (weekly
+   DMI, Niño3.4, SOI PNG or Zarr) are `iod-enso-fetch`, not this skill.
 
 ## Usage
 
