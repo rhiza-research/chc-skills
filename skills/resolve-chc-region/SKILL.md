@@ -1,6 +1,6 @@
 ---
 name: resolve-chc-region
-description: Resolve a CHC-bundled hydrological region — currently the Tana River basin (Kenya) — to a lat/lon bbox and optionally its boundary polygon GeoJSON. Use when a task names the Tana River basin / Tana basin / Tana catchment, e.g. to clip or mask CHIRPS or forecasts to the basin with clip-region or plot. Bare "Tana River" is ambiguous with Tana River County; countries, counties, and landmarks go to resolve-region instead.
+description: Resolve a CHC-bundled hydrological region — currently only the Tana River basin (Kenya) — to a lat/lon bbox and optionally its boundary polygon GeoJSON. Use this, not resolve-region, whenever a task names the Tana River basin / Tana basin / Tana catchment (resolve-region has no basins and its Nominatim fallback returns an unrelated basin), e.g. to clip or mask CHIRPS or forecasts to the basin with clip-region or plot. Countries, counties (including Tana River County), named regions, and landmarks go to resolve-region; bare "Tana River" is ambiguous, so ask.
 license: MIT
 compatibility: Requires Python 3.12 and uv.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/resolve.py *)
@@ -18,14 +18,29 @@ bbox for `--bbox` flags, and `--geojson` writes a single-feature
 `FeatureCollection` for `clip-region --geojson` or `plot`'s
 `geo.mask_geojson`.
 
-## When to use
+## When to use this vs resolve-region
 
-- The user names the Tana River basin, Tana basin, or Tana catchment.
-- A pipeline needs basin-masked CHIRPS / CHIRPS-GEFS / forecast values
-  (fetch over the bbox, then clip with the polygon).
+Use this skill **only** for the regions it bundles (see Regions below). For
+everything else, weather-skills `resolve-region` is the right tool.
 
-Countries, Kenyan counties, named multi-country regions, and landmarks are
-**not** here — use `resolve-region`.
+| The user asks for… | Use |
+|---|---|
+| Tana River **basin** / Tana basin / Tana catchment | `resolve-chc-region` (this skill) |
+| Tana River **County** (the administrative unit) | `resolve-region kenya-tana_river` |
+| A country, multi-country region, county / state, or landmark | `resolve-region` |
+| Any other river basin or catchment | Neither — ask the user for a boundary file and pass it to `clip-region --geojson` |
+
+Never send a basin name to `resolve-region`. It has no basins, so the name
+falls through to Nominatim, which silently returns whatever OSM ranks first:
+`resolve-region "Tana River basin"` gives the Upper Agno River Basin in the
+Philippines.
+
+Both skills print the same `N/W/S/E` bbox and write the same single-feature
+`FeatureCollection` with `--geojson`, so downstream steps (`clip-region`,
+`plot`, fetchers' `--bbox`) do not care which one produced it.
+
+Typical use: basin-masked CHIRPS / CHIRPS-GEFS / forecast values — fetch
+over the bbox, then clip with the polygon.
 
 ### Tana River vs Tana River County
 

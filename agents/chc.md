@@ -66,9 +66,12 @@ weather-skills transforms and plotters when those are available (for example
 - **`resolve-chc-region`** turns a CHC-bundled region into an `N/W/S/E` bbox
   and, with `--geojson`, its boundary polygon — today the **Tana River basin**
   (HydroBASINS level 7, ~95,250 km²; not the FEWS/EWX outline). Fetch over
-  the bbox, then mask with `clip-region --geojson`. Bare "Tana River" is
-  ambiguous with Tana River County (`resolve-region kenya-tana_river`); ask
-  if unclear. Countries, counties, and landmarks go to `resolve-region`.
+  the bbox, then mask with `clip-region --geojson`. Use it instead of
+  `resolve-region` for the Tana basin — `resolve-region` has no basins and
+  its Nominatim fallback returns an unrelated one. Countries, counties
+  (including Tana River County, `resolve-region kenya-tana_river`), and
+  landmarks still go to `resolve-region`. Bare "Tana River" is ambiguous;
+  ask. Other basins are not bundled: ask for a boundary file.
 
 ## Working directory
 
