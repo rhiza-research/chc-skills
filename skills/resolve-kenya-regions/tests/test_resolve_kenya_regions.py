@@ -50,13 +50,15 @@ def test_tana_basin_geojson_is_polygon(tmp_path, capsys, resolve):
 
 @pytest.mark.parametrize("alias", ["Tana basin", "Tana River catchment", "tana catchment"])
 def test_aliases(mod, alias):
-    assert mod.lookup(alias)["properties"]["name"] == "Tana River basin"
+    key, fc = mod.load(alias)
+    assert key == "tana_river_basin"
+    assert fc["features"][0]["properties"]["name"] == "Tana River basin"
 
 
 def test_bare_tana_river_is_ambiguous(mod):
     """Bare "Tana River" is also Tana River County, so it must not pick the basin."""
     with pytest.raises(UsageError, match="kenya-tana_river"):
-        mod.lookup("Tana River")
+        mod.load("Tana River")
 
 
 def test_unknown_region_points_to_resolve_region(resolve, capsys):
@@ -89,6 +91,13 @@ def test_kenya_counties_geojson(tmp_path, capsys, resolve):
     assert len(fc["features"]) == 47
 
 
-def test_counties_only_for_kenya(mod):
-    with pytest.raises(UsageError, match="no bundled county"):
-        mod.counties("Tana basin")
+def test_counties_only_for_kenya(tmp_path, resolve, capsys):
+    with pytest.raises(SystemExit) as exc:
+        run_skill(resolve, "Tana basin", "--counties-geojson", str(tmp_path / "c.json"))
+    assert exc.value.code == 2
+    assert "only Kenya" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("alias", ["Kenya", "KEN", "Kenya KNSDI", "Kenya counties"])
+def test_kenya_aliases(mod, alias):
+    assert mod.load(alias)[0] == "kenya"

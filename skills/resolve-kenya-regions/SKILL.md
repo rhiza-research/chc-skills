@@ -106,14 +106,19 @@ Turn off `admin1` so the Natural Earth admin-1 lines do not double the KNSDI cou
 
 ## Data
 
+Each region is `data/<key>.geojson`, a single-feature FeatureCollection whose
+properties (name, level, country, source, ...) are what `--geojson` writes;
+the script only adds `bbox`. To add a region, drop in its file and list its
+names in `REGIONS` in `scripts/resolve.py`.
+
 **Tana River basin.** `data/tana_river_basin.geojson`: converted from the
 supplied `Tana Basin.shp` (single polygon, WGS84 lon/lat; no `.prj` or
 attribute table came with it). Coordinates rounded to 4 decimals (~11 m).
 It reaches farther east (to ~41.56° E) than the earlier HydroBASINS
 dissolve, which covered ~95,250 km².
 
-**Kenya.** `data/kenya_knsdi.geojson` (national outline, the union of the
-counties) and `data/kenya_counties_knsdi.geojson` (47 county polygons):
+**Kenya.** `data/kenya.geojson` (national outline, the union of the
+counties) and `data/kenya_counties.geojson` (47 county polygons):
 converted from the supplied Kenya National Spatial Data Infrastructure
 (KNSDI) `Kenya_Counties_KNSDI.shp` (WGS84 lon/lat, no attribute table, so
 no county names). Simplified with a shared-edge-preserving coverage
