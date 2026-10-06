@@ -4,7 +4,7 @@
 #   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@dev",
 # ]
 # ///
-"""Resolve a CHC-bundled region (e.g. Tana River basin) to a bbox and optional polygon."""
+"""Resolve a Kenya region (Tana River basin, Kenya KNSDI) to a bbox and optional polygon."""
 
 import json
 import sys
@@ -19,8 +19,18 @@ _SKILL_VERSION = "0.0.1"
 _DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 # Bundled regions. ``geojson`` is a single-feature FeatureCollection under
-# ``data/``. Aliases are passed through :func:`clean_region_name`.
+# ``data/``; ``counties`` (optional) holds one feature per admin-1 unit.
+# Aliases are passed through :func:`clean_region_name`.
 _REGIONS = {
+    "kenya": {
+        "name": "Kenya",
+        "geojson": "kenya_knsdi.geojson",
+        "counties": "kenya_counties_knsdi.geojson",
+        "level": "country",
+        "iso3": "KEN",
+        "country": "Kenya",
+        "aliases": ("KEN", "Kenya KNSDI", "Kenya counties"),
+    },
     "tana_river_basin": {
         "name": "Tana River basin",
         "geojson": "tana_river_basin.geojson",
@@ -49,8 +59,7 @@ def _index():
     return by_key
 
 
-def lookup(name):
-    """Return the GeoJSON Feature for a bundled region name or alias."""
+def _spec(name):
     cleaned = clean_region_name(name)
     if cleaned in _AMBIGUOUS:
         raise UsageError(_AMBIGUOUS[cleaned])
@@ -58,9 +67,16 @@ def lookup(name):
     if spec is None:
         known = ", ".join(repr(s["name"]) for s in _REGIONS.values())
         raise UsageError(
-            f"{name!r} is not a CHC-bundled region (known: {known}). "
-            "For countries, admin units, and landmarks use the resolve-region skill."
+            f"{name!r} is not bundled with resolve-kenya-regions (known: {known}). "
+            "For single counties (e.g. kenya-nairobi), other countries, and landmarks "
+            "use the resolve-region skill."
         )
+    return spec
+
+
+def lookup(name):
+    """Return the GeoJSON Feature for a bundled region name or alias."""
+    spec = _spec(name)
     with (_DATA_DIR / spec["geojson"]).open(encoding="utf-8") as fh:
         source = json.load(fh)["features"][0]
     geometry = source["geometry"]
@@ -81,36 +97,54 @@ def lookup(name):
     }
 
 
+def counties(name):
+    """Return the admin-1 FeatureCollection bundled with a region."""
+    spec = _spec(name)
+    if not spec.get("counties"):
+        raise UsageError(f"{spec['name']} has no bundled county boundaries.")
+    with (_DATA_DIR / spec["counties"]).open(encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def _write(path, fc, what):
+    try:
+        Path(path).write_text(json.dumps(fc, separators=(",", ":")))
+    except OSError as exc:
+        raise DataError(f"could not write {what} to {path}: {exc}") from None
+    print(f"Wrote {what}: {path}", file=sys.stderr)
+
+
 @weather_skill(
-    name="resolve-chc-region",
+    name="resolve-kenya-regions",
     version=_SKILL_VERSION,
     output=False,
 )
 @weather_skill.argument(
     "name",
-    help="CHC-bundled region name or alias (e.g. 'Tana River basin', 'Tana basin')",
+    help="Kenya region name or alias (e.g. 'Tana River basin', 'Kenya')",
 )
 @weather_skill.argument(
     "--geojson",
     help="Optional path: write the boundary polygon as GeoJSON",
 )
-def resolve_chc_region(name, geojson, **kwargs):
-    """Resolve a CHC-bundled region (e.g. Tana River basin) to a bbox and optional polygon."""
+@weather_skill.argument(
+    "--counties-geojson",
+    help="Optional path: write one polygon per county (Kenya only), e.g. for plot outline layers",
+)
+def resolve_kenya_regions(name, geojson, counties_geojson=None, **kwargs):
+    """Resolve a Kenya region (Tana River basin, Kenya KNSDI) to a bbox and optional polygon."""
     feature = lookup(name)
     n, w, s, e = feature["properties"]["bbox"]
 
-    # Write the polygon (guarded) BEFORE printing the bbox, so a failed write
+    # Write the polygons (guarded) BEFORE printing the bbox, so a failed write
     # never emits a valid-looking bbox to stdout that a caller might consume.
+    if counties_geojson:
+        _write(counties_geojson, counties(name), "county boundaries")
     if geojson:
-        out_fc = {"type": "FeatureCollection", "features": [feature]}
-        try:
-            Path(geojson).write_text(json.dumps(out_fc, separators=(",", ":")))
-        except OSError as exc:
-            raise DataError(f"could not write boundary polygon to {geojson}: {exc}") from None
-        print(f"Wrote boundary polygon: {geojson}", file=sys.stderr)
+        _write(geojson, {"type": "FeatureCollection", "features": [feature]}, "boundary polygon")
 
     print(f"{n}/{w}/{s}/{e}")
 
 
 if __name__ == "__main__":
-    resolve_chc_region()
+    resolve_kenya_regions()

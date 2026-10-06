@@ -18,7 +18,7 @@ Hovmöllers, and Africa ITF position figures. Built on
 | [`mjo-forecast-fetch`](skills/mjo-forecast-fetch/) | Fetch the latest CPC CLIVAR MJO Wheeler–Hendon phase-space PNG (GEFS / ECMWF / ECMWF extended-range) |
 | [`ncics-mjo-png`](skills/ncics-mjo-png/) | Fetch an NCICS MJO / equatorial-wave map or Hovmöller PNG (default live Africa 7-day OLR map; `--date` for archive snapshots; `--product hovmoller` for tropics 15S–15N) |
 | [`africa-itf`](skills/africa-itf/) | Fetch the latest NOAA/CPC Africa ITF / ITCZ position PNG for one region (`--location africa\|west-africa\|east-africa`; CPC uses both terms) |
-| [`resolve-chc-region`](skills/resolve-chc-region/) | Bbox and boundary polygon for CHC-bundled regions (today: Tana River basin, from HydroBASINS) in the same shape as `resolve-region` |
+| [`resolve-kenya-regions`](skills/resolve-kenya-regions/) | Bbox and boundary polygon for the Tana River basin and Kenya's KNSDI national outline (plus county lines), in the same shape as `resolve-region` |
 
 ## Quick start
 
@@ -57,7 +57,7 @@ uv run skills/ncics-mjo-png/scripts/fetch.py --date 2024-12-30 -o /tmp/olr_afric
 uv run skills/africa-itf/scripts/fetch.py -o /tmp/itf_africa.png
 
 # Tana River basin bbox + polygon (for clip-region --geojson / plot masks)
-uv run skills/resolve-chc-region/scripts/resolve.py "Tana River basin" --geojson /tmp/tana.json
+uv run skills/resolve-kenya-regions/scripts/resolve.py "Tana River basin" --geojson /tmp/tana.json
 ```
 
 If anomalies are not already in the input, compute them first (climatology +
