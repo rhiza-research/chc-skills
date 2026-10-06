@@ -59,9 +59,7 @@ def _image_url(model: str, bias_corrected: bool) -> str:
     raw for this model, use raw. ``False``: require a raw diagram.
     """
     if model not in MODELS:
-        raise UsageError(
-            f"unknown --model {model!r}; choose one of: {', '.join(MODEL_CHOICES)}"
-        )
+        raise UsageError(f"unknown --model {model!r}; choose one of: {', '.join(MODEL_CHOICES)}")
     variants = MODELS[model]
     if bias_corrected:
         filename = variants.get("bc") or variants.get("raw")
@@ -104,8 +102,7 @@ def _download(url: str, dest: Path) -> None:
     required=True,
     choices=list(MODEL_CHOICES),
     help=(
-        "Forecast model: gefs, gefs-extended, cfs, cmc, jma, ecmwf, "
-        "ecmwf-extended-range, or bom."
+        "Forecast model: gefs, gefs-extended, cfs, cmc, jma, ecmwf, ecmwf-extended-range, or bom."
     ),
 )
 @weather_skill.argument(

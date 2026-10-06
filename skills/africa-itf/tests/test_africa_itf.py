@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import io
 from pathlib import Path
+from typing import ClassVar
 
 import pytest
 from conftest import load_skill, run_skill
@@ -53,7 +54,7 @@ def test_fetch_africa_default_converts_jpeg_to_png(mod, monkeypatch, tmp_path):
         seen["url"] = req.full_url
 
         class Resp:
-            headers = {"Content-Type": "image/jpeg"}
+            headers: ClassVar[dict] = {"Content-Type": "image/jpeg"}
 
             def read(self):
                 return _valid_jpeg_bytes()
