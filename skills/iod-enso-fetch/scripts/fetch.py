@@ -244,9 +244,7 @@ def _read_url(url: str, *, referer: str, accept: str) -> tuple[bytes, str]:
 
 
 def _download(url: str, dest: Path, *, referer: str = OBS_PAGE) -> None:
-    data, content_type = _read_url(
-        url, referer=referer, accept="image/png,image/*;q=0.8,*/*;q=0.5"
-    )
+    data, content_type = _read_url(url, referer=referer, accept="image/png,image/*;q=0.8,*/*;q=0.5")
     if data[:8] != b"\x89PNG\r\n\x1a\n":
         raise DataError(
             f"downloaded {url!r} is not a PNG (content-type={content_type!r}, size={len(data)})."
@@ -274,7 +272,7 @@ def _expand_palette_png(path: Path) -> None:
 
 def _parse_ymd(raw: str) -> date:
     try:
-        return datetime.strptime(raw, "%Y%m%d").date()
+        return datetime.strptime(raw, "%Y%m%d").replace(tzinfo=UTC).date()
     except ValueError as exc:
         raise DataError(f"unrecognized BoM date {raw!r} (expected YYYYMMDD).") from exc
 
@@ -323,9 +321,7 @@ def _obs_dataset(index: str, text: str) -> xr.Dataset:
         ds[name].attrs["standard_name"] = "sea_surface_temperature_anomaly"
     stamp_cf_coords(ds)
     if index == "soi":
-        ds[name].attrs["comment"] = (
-            "30-day rolling Troup SOI; time is the window end date."
-        )
+        ds[name].attrs["comment"] = "30-day rolling Troup SOI; time is the window end date."
     else:
         ds[name].attrs["comment"] = "Weekly index; time is the week-ending date."
     ds.attrs.update(Conventions="CF-1.13", weather_skills_source="bom")
@@ -334,7 +330,7 @@ def _obs_dataset(index: str, text: str) -> xr.Dataset:
 
 def _parse_month_label(label: str) -> date:
     try:
-        return datetime.strptime(label.strip(), "%b %Y").date().replace(day=1)
+        return datetime.strptime(label.strip(), "%b %Y").replace(tzinfo=UTC).date().replace(day=1)
     except ValueError as exc:
         raise DataError(f"unrecognized BoM month label {label!r} (expected 'Mon YYYY').") from exc
 
@@ -372,12 +368,12 @@ def _parse_forecast_json(payload: dict) -> tuple[np.ndarray, np.ndarray, dict[st
         found: dict[str, float] = {}
         for raw_key, raw_val in row.items():
             found[_frequency_bucket(str(raw_key))] = _parse_float(str(raw_val))
-        for bucket in buckets:
+        for bucket, values in buckets.items():
             if bucket not in found:
                 raise DataError(
                     f"ACCESS-S outlook JSON frequency for {label!r} is missing {bucket}."
                 )
-            buckets[bucket].append(found[bucket])
+            values.append(found[bucket])
     freqs = {name: np.asarray(vals, dtype=np.float64) for name, vals in buckets.items()}
     return times, means, freqs
 

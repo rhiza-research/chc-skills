@@ -269,9 +269,7 @@ def fetch(date, outlook, bbox, variable, workers, **kwargs):
     if workers < 1:
         raise UsageError("--workers must be >= 1")
 
-    jobs = [(KIND_MEAN, var) for var in vars_wanted] + [
-        (KIND_ANOM, var) for var in vars_wanted
-    ]
+    jobs = [(KIND_MEAN, var) for var in vars_wanted] + [(KIND_ANOM, var) for var in vars_wanted]
 
     results = []
     with ThreadPoolExecutor(max_workers=workers) as pool:

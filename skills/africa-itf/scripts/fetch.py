@@ -69,7 +69,7 @@ def _download_as_png(url: str, dest: Path) -> None:
                 img = img.convert("RGBA")
             dest.parent.mkdir(parents=True, exist_ok=True)
             img.save(dest, format="PNG")
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - Pillow raises many types for a bad image
         raise DataError(
             f"downloaded {url!r} is not a usable image "
             f"(content-type={content_type!r}, size={len(data)}): {exc}"
@@ -85,9 +85,7 @@ def _download_as_png(url: str, dest: Path) -> None:
     "--location",
     default="africa",
     choices=list(LOCATION_CHOICES),
-    help=(
-        "ITF region: africa (default, continental map), west-africa, or east-africa."
-    ),
+    help=("ITF region: africa (default, continental map), west-africa, or east-africa."),
 )
 def fetch(location, output, **kwargs):
     """Fetch the latest NOAA/CPC Africa ITF position figure as a PNG.
