@@ -19,7 +19,7 @@ Hovmöllers, and Africa ITF position figures. Built on
 | [`ncics-mjo-png`](skills/ncics-mjo-png/) | Fetch an NCICS MJO / equatorial-wave map or Hovmöller PNG (default live Africa 7-day OLR map; `--date` for archive snapshots; `--product hovmoller` for tropics 15S–15N) |
 | [`africa-itf`](skills/africa-itf/) | Fetch the latest NOAA/CPC Africa ITF / ITCZ position PNG for one region (`--location africa\|west-africa\|east-africa`; CPC uses both terms) |
 | [`resolve-kenya-regions`](skills/resolve-kenya-regions/) | Bbox and boundary polygon for the Tana River basin and Kenya's KNSDI national outline (plus county lines), in the same shape as `resolve-region` |
-| [`chc-plot-theme`](skills/chc-plot-theme/) | Plot theme file with the CHC rainfall colormaps (`chc_precip_<window>`, `chc_precip_anom_<window>`) and the KMSA rainfall-map classes (`kmsa`), for `plot --theme-file` |
+| [`chc-plot-theme`](skills/chc-plot-theme/) | CHC rainfall colormaps (`chc_precip_<window>`, `chc_precip_anom_<window>`) and the KMSA rainfall-map classes (`kmsa`), printed as JSON for `plot --spec` `theme.colormap` |
 
 ## Quick start
 

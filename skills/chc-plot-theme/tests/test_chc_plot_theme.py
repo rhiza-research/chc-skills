@@ -1,7 +1,6 @@
 """Correctness tests for chc-plot-theme."""
 
 import json
-from pathlib import Path
 
 import pytest
 from conftest import load_skill, run_skill
@@ -12,9 +11,17 @@ def mod():
     return load_skill("chc-plot-theme", "theme")
 
 
-def test_prints_theme_path(mod, capsys):
-    run_skill(mod.chc_plot_theme)
-    assert Path(capsys.readouterr().out.strip()) == mod.THEME
+def test_prints_colormap_json(mod, capsys):
+    run_skill(mod.chc_plot_theme, "--colormap", "kmsa")
+    out = capsys.readouterr().out
+    assert out.count("\n") == 1  # one line, ready to embed in --spec
+    assert json.loads(out) == {"name": "kmsa", **mod.COLORMAPS["kmsa"]}
+
+
+def test_rejects_unknown_colormap(mod):
+    with pytest.raises(SystemExit) as exc:
+        run_skill(mod.chc_plot_theme, "--colormap", "nope")
+    assert exc.value.code != 0
 
 
 def test_theme_colormaps(mod):

@@ -1,6 +1,6 @@
 ---
 name: chc-plot-theme
-description: Theme file with CHC and KMSA rainfall colormaps for the weather-skills plot skills. Use when a map should use the CHC precipitation classes (chc_precip_<window>, chc_precip_anom_<window>) or look like a Kenya Meteorological Department (KMSA) rainfall map (kmsa). Prints the theme path to pass as plot --theme-file, then name the colormap in theme.colormap.
+description: CHC and KMSA rainfall colormaps for the weather-skills plot skills. Use when a map should use the CHC precipitation classes (chc_precip_<window>, chc_precip_anom_<window>) or look like a Kenya Meteorological Department (KMSA) rainfall map (kmsa). Prints one colormap as a JSON object; put it in plot --spec as theme.colormap.
 license: MIT
 compatibility: Requires Python 3.12 and uv.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/theme.py *)
@@ -11,23 +11,22 @@ metadata:
 
 # chc-plot-theme
 
-A plot theme file with the CHC and KMSA rainfall colormaps. The script prints
-the file's path; pass it to `plot` (or `plot-timeseries`, `plot-verify`) with
-`--theme-file`, then name a colormap from it in `--spec`.
+The CHC and KMSA rainfall colormaps. `--colormap NAME` prints that colormap
+as one line of JSON (`name`, `colors`, `bounds`). Put that object in `--spec`
+as `theme.colormap` for `plot` (or `plot-timeseries`, `plot-verify`). No
+theme file is involved.
 
 ## Usage
 
 ```bash
-THEME=$(uv run ${CLAUDE_SKILL_DIR}/scripts/theme.py)
-plot -i totals.zarr -o map.png --theme-file "$THEME" \
-  --spec '{"theme": {"colormap": "kmsa"}, "layout": {"colorbar": {"extend": "max"}}}'
+CMAP=$(uv run ${CLAUDE_SKILL_DIR}/scripts/theme.py --colormap kmsa)
+plot -i totals.zarr -o map.png \
+  --spec "{\"theme\": {\"colormap\": $CMAP}, \"layout\": {\"colorbar\": {\"extend\": \"max\"}}}"
 ```
 
-A theme file cannot set colorbar options, so set `layout.colorbar.extend` in
-`--spec` yourself: `max` for `kmsa`, `both` for the CHC palettes.
-
-To have these colormaps on every plot without `--theme-file`, copy the file to
-`~/.config/weather-skills/theme.json`.
+Pass the object, not just the name: `plot` has no `kmsa` or `chc_precip_*`
+colormap of its own. Set `layout.colorbar.extend` in `--spec` yourself: `max`
+for `kmsa`, `both` for the CHC palettes.
 
 ## Colormaps
 
