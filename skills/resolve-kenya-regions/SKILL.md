@@ -64,14 +64,17 @@ BBOX=$(uv run ${CLAUDE_SKILL_DIR}/scripts/resolve.py "Tana River basin" --geojso
 # then e.g. clip-region --bbox "$BBOX" --geojson /tmp/tana.json ...
 ```
 
-Kenya map with KNSDI county lines and the Tana basin (KMSA rainfall colors):
+Kenya map with KNSDI county lines and the Tana basin (KMSA rainfall colors
+from the `chc-plot-theme` skill):
 
 ```bash
 BBOX=$(uv run ${CLAUDE_SKILL_DIR}/scripts/resolve.py Kenya --geojson /tmp/kenya.json --counties-geojson /tmp/kenya_counties.json)
 uv run ${CLAUDE_SKILL_DIR}/scripts/resolve.py "Tana basin" --geojson /tmp/tana.json
+# CMAP=$(chc-plot-theme --colormap kmsa)
 # plot --layer heatmap:totals.zarr --layer outline:/tmp/kenya_counties.json --layer outline:/tmp/tana.json \
-#   --spec '{"theme": {"colormap": "kmsa"}, "geo": {"overlays": {"admin1": false}},
-#            "layers": [{}, {"line": {"color": "0.3", "linewidth": 0.5}}, {"line": {"linewidth": 1.6}}]}'
+#   --spec "{\"data\": [{\"uid\": \"a\", \"meta\": {\"palette\": $CMAP}},
+#            {\"uid\": \"b\", \"line\": {\"color\": \"#4d4d4d\", \"width\": 0.5}}, {\"uid\": \"c\", \"line\": {\"width\": 1.6}}],
+#            \"layout\": {\"meta\": {\"overlays\": {\"admin1\": false}}}}"
 ```
 
 Turn off `admin1` so the Natural Earth admin-1 lines do not double the KNSDI county lines.

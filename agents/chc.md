@@ -63,12 +63,12 @@ weather-skills transforms and plotters when those are available (for example
   Intertropical Convergence Zone (ITCZ) position figure for one region
   (`--location africa|west-africa|east-africa`, default `africa`). Users may
   say ITF or ITCZ — same CPC product. Figure-only; no gridded data.
-- **`chc-plot-theme`** prints the path of a plot theme file with the CHC
-  rainfall colormaps (`chc_precip_daily|week|month|season`,
-  `chc_precip_anom_daily|week|month|season`) and the KMSA rainfall-map
-  classes (`kmsa`). Pass it as `plot --theme-file`, name the colormap in
-  `theme.colormap`, and set `layout.colorbar.extend` (`max` for `kmsa`,
-  `both` for CHC). Use `kmsa` when a Kenya map should look like a KMSA map.
+- **`chc-plot-theme`** prints one rainfall colormap as JSON: the CHC
+  colormaps (`chc_precip_daily|week|month|season`,
+  `chc_precip_anom_daily|week|month|season`) or the KMSA rainfall-map
+  classes (`kmsa`), chosen with `--colormap`. Put the printed object in
+  `plot --spec` as the heatmap trace's `meta.palette` (not just the name).
+  Use `kmsa` when a Kenya map should look like a KMSA map.
 - **`resolve-kenya-regions`** turns a bundled Kenya region into an `N/W/S/E`
   bbox and, with `--geojson`, its boundary polygon: the **Tana River basin**
   (~126,000 km²) and **Kenya**'s official KNSDI national outline.
