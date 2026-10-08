@@ -67,8 +67,9 @@ weather-skills transforms and plotters when those are available (for example
   colormaps (`chc_precip_daily|week|month|season`,
   `chc_precip_anom_daily|week|month|season`) or the KMSA rainfall-map
   classes (`kmsa`), chosen with `--colormap`. Put the printed object in
-  `plot --spec` as the heatmap trace's `meta.palette` (not just the name).
-  Use `kmsa` when a Kenya map should look like a KMSA map.
+  `plot --spec` as `theme.colormap` (not just the name), and set
+  `layout.colorbar.extend` (`max` for `kmsa`, `both` for CHC). Use `kmsa`
+  when a Kenya map should look like a KMSA map.
 - **`resolve-kenya-regions`** turns a bundled Kenya region into an `N/W/S/E`
   bbox and, with `--geojson`, its boundary polygon: the **Tana River basin**
   (~126,000 km²) and **Kenya**'s official KNSDI national outline.

@@ -4,7 +4,7 @@
 #   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@dev",
 # ]
 # ///
-"""Print one CHC or KMSA rainfall colormap as JSON for plot's meta.palette."""
+"""Print one CHC or KMSA rainfall colormap as JSON for plot's theme.colormap."""
 
 import json
 from pathlib import Path
@@ -26,7 +26,7 @@ COLORMAPS = json.loads(THEME.read_text(encoding="utf-8"))["colormaps"]
     help="Colormap to print, e.g. kmsa or chc_precip_week.",
 )
 def chc_plot_theme(colormap, **kwargs):
-    """Print one CHC or KMSA rainfall colormap as JSON for plot's meta.palette."""
+    """Print one CHC or KMSA rainfall colormap as JSON for plot's theme.colormap."""
     print(json.dumps({"name": colormap, **COLORMAPS[colormap]}, separators=(",", ":")))
 
 

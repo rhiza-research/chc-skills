@@ -72,9 +72,9 @@ BBOX=$(uv run ${CLAUDE_SKILL_DIR}/scripts/resolve.py Kenya --geojson /tmp/kenya.
 uv run ${CLAUDE_SKILL_DIR}/scripts/resolve.py "Tana basin" --geojson /tmp/tana.json
 # CMAP=$(chc-plot-theme --colormap kmsa)
 # plot --layer heatmap:totals.zarr --layer outline:/tmp/kenya_counties.json --layer outline:/tmp/tana.json \
-#   --spec "{\"data\": [{\"uid\": \"a\", \"meta\": {\"palette\": $CMAP}},
-#            {\"uid\": \"b\", \"line\": {\"color\": \"#4d4d4d\", \"width\": 0.5}}, {\"uid\": \"c\", \"line\": {\"width\": 1.6}}],
-#            \"layout\": {\"meta\": {\"overlays\": {\"admin1\": false}}}}"
+#   --spec "{\"theme\": {\"colormap\": $CMAP}, \"layout\": {\"colorbar\": {\"extend\": \"max\"}},
+#            \"geo\": {\"overlays\": {\"admin1\": false}},
+#            \"layers\": [{}, {\"line\": {\"color\": \"0.3\", \"linewidth\": 0.5}}, {\"line\": {\"linewidth\": 1.6}}]}"
 ```
 
 Turn off `admin1` so the Natural Earth admin-1 lines do not double the KNSDI county lines.
