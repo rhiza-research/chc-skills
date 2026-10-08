@@ -49,6 +49,12 @@ def test_url_builder(mod):
     assert url.endswith(
         "/chc-mirror/experimental/SubC/07_day/global/archive/mme_mean_ts_7d_20251201.nc"
     )
+    candidates = mod._candidate_urls(url)
+    assert candidates[0] == url
+    assert candidates[1] == (
+        "https://data.chc.ucsb.edu/experimental/SubC"
+        "/07_day/global/archive/mme_mean_ts_7d_20251201.nc"
+    )
 
 
 def test_normalize_field(mod):
