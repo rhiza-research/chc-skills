@@ -129,3 +129,15 @@ def test_kenya_ond_geojson_is_custom_box(tmp_path, capsys, resolve):
     assert props["iso3"] == "KEN"
     assert props["bbox"] == [5.0, 36.5, -5.0, 42.0]
     assert feature["geometry"]["type"] == "Polygon"
+
+
+def test_east_africa_stops_at_15s(tmp_path, capsys, resolve):
+    path = tmp_path / "east_africa.json"
+    run_skill(resolve, "East Africa", "--geojson", str(path))
+    n, w, s, e = (float(v) for v in capsys.readouterr().out.strip().split("/"))
+    assert s == pytest.approx(-15.0)
+    assert n > 10 and w < 34 and e > 50
+    (feature,) = json.loads(path.read_text())["features"]
+    assert feature["properties"]["name"] == "East Africa"
+    assert feature["properties"]["level"] == "region"
+    assert feature["geometry"]["type"] == "MultiPolygon"
