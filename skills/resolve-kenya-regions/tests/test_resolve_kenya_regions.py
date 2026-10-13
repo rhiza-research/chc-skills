@@ -101,3 +101,31 @@ def test_counties_only_for_kenya(tmp_path, resolve, capsys):
 @pytest.mark.parametrize("alias", ["Kenya", "KEN", "Kenya KNSDI", "Kenya counties"])
 def test_kenya_aliases(mod, alias):
     assert mod.load(alias)[0] == "kenya"
+
+
+@pytest.mark.parametrize(
+    "alias",
+    [
+        "Kenya OND region",
+        "Kenya OND",
+        "OND Kenya",
+        "Central-Eastern Kenya",
+        "Central and Eastern Kenya",
+        "CE Kenya",
+    ],
+)
+def test_kenya_ond_aliases_print_box(capsys, resolve, alias):
+    run_skill(resolve, alias)
+    assert capsys.readouterr().out.strip() == "5.0/36.5/-5.0/42.0"
+
+
+def test_kenya_ond_geojson_is_custom_box(tmp_path, capsys, resolve):
+    path = tmp_path / "ond.json"
+    run_skill(resolve, "Kenya OND region", "--geojson", str(path))
+    (feature,) = json.loads(path.read_text())["features"]
+    props = feature["properties"]
+    assert props["name"] == "Kenya OND region"
+    assert props["level"] == "custom"
+    assert props["iso3"] == "KEN"
+    assert props["bbox"] == [5.0, 36.5, -5.0, 42.0]
+    assert feature["geometry"]["type"] == "Polygon"

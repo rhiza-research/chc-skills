@@ -4,7 +4,7 @@
 #   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@dev",
 # ]
 # ///
-"""Resolve a Kenya region (Tana River basin, Kenya KNSDI) to a bbox and optional polygon."""
+"""Resolve a Kenya region (Tana River basin, Kenya KNSDI, Kenya OND box) to a bbox and polygon."""
 
 import json
 import sys
@@ -21,6 +21,15 @@ DATA = Path(__file__).resolve().parent.parent / "data"
 # Region key (data/<key>.geojson) -> accepted names, as clean_region_name spells them.
 REGIONS = {
     "kenya": ("kenya", "ken", "kenya_knsdi", "kenya_counties"),
+    "kenya_ond_region": (
+        "kenya_ond_region",
+        "kenya_ond",
+        "ond_kenya",
+        "central_eastern_kenya",
+        "central-eastern_kenya",
+        "central_and_eastern_kenya",
+        "ce_kenya",
+    ),
     "tana_river_basin": (
         "tana_river_basin",
         "tana_basin",
@@ -42,8 +51,8 @@ def load(name):
     if cleaned not in ALIASES:
         raise UsageError(
             f"{name!r} is not bundled with resolve-kenya-regions (known: 'Kenya', "
-            "'Tana River basin'). For single counties (e.g. kenya-nairobi), other countries, "
-            "and landmarks use the resolve-region skill."
+            "'Tana River basin', 'Kenya OND region'). For single counties (e.g. kenya-nairobi), "
+            "other countries, and landmarks use the resolve-region skill."
         )
     key = ALIASES[cleaned]
     fc = json.loads((DATA / f"{key}.geojson").read_text())
@@ -61,14 +70,16 @@ def write(path, text, what):
 
 
 @weather_skill(name="resolve-kenya-regions", version=_SKILL_VERSION, output=False)
-@weather_skill.argument("name", help="Region name or alias (e.g. 'Kenya', 'Tana River basin')")
+@weather_skill.argument(
+    "name", help="Region name or alias (e.g. 'Kenya', 'Tana River basin', 'Kenya OND region')"
+)
 @weather_skill.argument("--geojson", help="Optional path: write the boundary polygon as GeoJSON")
 @weather_skill.argument(
     "--counties-geojson",
     help="Optional path: write one polygon per county (Kenya only), e.g. for plot outline layers",
 )
 def resolve_kenya_regions(name, geojson, counties_geojson=None, **kwargs):
-    """Resolve a Kenya region (Tana River basin, Kenya KNSDI) to a bbox and optional polygon."""
+    """Resolve a Kenya region (Tana River basin, Kenya KNSDI, Kenya OND box) to a bbox and polygon."""
     key, fc = load(name)
 
     # Write files before printing, so a failed write never leaves a bbox on stdout.
