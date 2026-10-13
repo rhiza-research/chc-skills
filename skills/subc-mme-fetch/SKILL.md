@@ -1,6 +1,6 @@
 ---
 name: subc-mme-fetch
-description: Fetch one CHC SubC multi-model-ensemble (MME) outlook — 7d, 15d, or 30d — for selected climate variables (pr/tas/tasmax/tasmin/tdps/ts mean + anomaly) from the public global archive into a weather-skills forecast Zarr. Use when a task needs a single SubC MME outlook map for clipping, comparison, or plotting; use --probe-latest with a variable to find the latest published init.
+description: Fetch one CHC SubC multi-model-ensemble (MME) outlook — 7d, 15d, or 30d — for selected climate variables (pr/tas/tasmax/tasmin/tdps/ts mean + anomaly) from the public global archive into a weather-skills forecast Zarr. Use when a task needs a single SubC MME outlook map for clipping, comparison, or plotting; use --probe-latest with a variable to find the latest published init. SubC publishes irregularly: the latest init can be weeks old with its window already over (the probe warns on stderr), so check it covers the period you need. Precip is a window sum in mm; every field carries aggregation_period = the outlook length. --bbox keeps every 1° cell that overlaps the box.
 license: MIT
 compatibility: Requires Python 3.12 and uv. Fetches the public GCS mirror first (gs://sheerwater-public-datalake/chc-mirror), then falls back to data.chc.ucsb.edu. No credentials required.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py *)
@@ -73,14 +73,20 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --outlook 7d|15d|30d \
   the archive filename date / `window_start`.
 - `--outlook` — required. One of `7d`, `15d`, `30d`. Selects which SubC
   outlook forecast to fetch (three separate products; one per call).
-- `--bbox` — optional spatial subset `N/W/S/E`.
+- `--bbox` — optional spatial subset `N/W/S/E`. Padded by half a grid cell
+  (0.5°), so every 1° cell that overlaps the box is kept, including cells
+  whose centre lies just outside (e.g. the 42°E column for Kenya's
+  41.9°E edge). Mask with the polygon afterwards (`clip-region --geojson`).
 - `--variable`, `-v` — climate variables (repeatable). Allowed: `pr`, `tas`,
   `tasmax`, `tasmin`, `tdps`, `ts`. Default: all six. For each selected
   variable both mean and anomaly are fetched.
 - `--workers` — concurrent remote opens (default 4).
 - `--output`, `-o` — output Zarr path (not needed with `--probe-latest`).
 - `--probe-latest [VAR]` — print the latest available init `YYYY-MM-DD` for
-  this `--outlook` on stdout and exit. **Pass a climate variable** (e.g.
+  this `--outlook` on stdout and exit. stderr says how many days old that
+  init is and, when init + outlook is before today, warns that its window has
+  already ended (e.g. latest 15d init 2026-09-16 is valid to 2026-10-01).
+  **Pass a climate variable** (e.g.
   `--probe-latest ts`) unless you truly need the latest date common to
   **all** six variables — probing every variable is slower and stricter.
   Optional `VAR` must be one of the climate variables above. Does not
@@ -90,20 +96,29 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --outlook 7d|15d|30d \
 
 Classic single-lead forecast envelope:
 
-- scalar `time` — outlook **valid date** = `--date` (archive init) **+**
-  outlook days (e.g. `--date 2025-12-01 --outlook 7d` → `time` is
-  `2025-12-08`)
-- `step` — one value, the outlook length (`7`, `15`, or `30` days as
-  `timedelta64`)
-- archive init kept as attrs `initialization_date` and
-  `outlook_valid_date` (same as `time`)
+- scalar `time` — the archive **init** (`--date`), as for every other
+  forecast fetcher
+- `step` — one value, `0 days`: the window starts at the init. The window
+  length (`7`, `15`, or `30` days) is the variable's `aggregation_period`, so
+  the window is `time + step` … `time + step + aggregation_period`
+  (e.g. `--date 2025-12-01 --outlook 7d` covers 2025-12-01 … 2025-12-08)
+- attrs `initialization_date` and `outlook_valid_date` (init + outlook days,
+  the end of the window)
 - `latitude`, `longitude` — 1° grid (or bbox subset)
 - data variables: bare name for the MME mean (`pr`, `tas`, …) and
   `{var}_anomaly` for the anomaly (`pr_anomaly`, `tas_anomaly`, …)
 
-Precipitation means are **window sums** in `mm` (not rates). Temperature-family
-fields are window means (source units typically `K`; converted to standard
-display units when classified).
+Precipitation means are **window sums** in `mm` (not rates), with
+`cell_methods: time: sum`. Temperature-family fields are window means
+(`time: mean`; source units typically `K`; converted to standard display
+units when classified). Every variable carries `aggregation_period` = the
+outlook length (`7 day`, `15 day`, `30 day`), so `plot` and
+`chc-plot-theme --for` size precipitation palettes to the window. Do not run
+`convert-to-totals` on `pr`: it is already a total.
+
+Each variable's `long_name` is a plain quantity (`Precipitation`,
+`Precipitation anomaly`, `Surface temperature anomaly`, …) for colorbar
+labels; the outlook and init are in its `comment` attr.
 
 Stamped with `weather_skills_source=chc-subc-mme` and `outlook=7d|15d|30d`.
 

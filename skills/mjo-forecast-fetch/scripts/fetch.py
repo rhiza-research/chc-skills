@@ -130,7 +130,8 @@ def fetch(model, bias_corrected, output, **kwargs):
             file=sys.stderr,
         )
     output = Path(output)
-    print(f"Fetching {url}", file=sys.stderr)
+    variant = "bias-corrected" if bias_corrected and "bc" in variants else "raw"
+    print(f"Fetching {model} ({variant}): {url}", file=sys.stderr)
     _download(url, output)
     return output
 

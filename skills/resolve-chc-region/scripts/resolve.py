@@ -25,6 +25,8 @@ REGIONS = {
     "kenya_ond_region": (
         "kenya_ond_region",
         "kenya_ond",
+        "kenya_ond_box",
+        "kenya_ond_briefing_box",
         "ond_kenya",
         "central_eastern_kenya",
         "central-eastern_kenya",

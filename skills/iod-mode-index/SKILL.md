@@ -1,6 +1,6 @@
 ---
 name: iod-mode-index
-description: Compute the Indian Ocean Dipole Mode Index (DMI) from a pre-computed temperature-anomaly field on any spatial gridded dataset (forecast or observations) — lat-weighted averages over the west and east IOD boxes, then west minus east, plus the two box means as separate variables. Use when a task needs the IOD index in degree C; do not use when you only want maps of SST or precip over the Indian Ocean.
+description: Compute the Indian Ocean Dipole Mode Index (DMI) from a pre-computed temperature-anomaly field on any spatial gridded dataset (forecast or observations) — lat-weighted averages over the west and east IOD boxes, then west minus east, plus the two box means as separate variables. Use when a task needs the IOD index (units follow the input anomaly: SubC ts_anomaly gives K); do not use when you only want maps of SST or precip over the Indian Ocean.
 license: MIT
 compatibility: Requires Python 3.12 and uv.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/iod.py *)
@@ -70,8 +70,11 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/iod.py -i <input.zarr> -v <anomaly_var> -o <p
 
 ### Output
 
-Dataset with three variables (units inherited from the anomaly field;
-documented as degree C when the input is in °C/K-converted):
+Dataset with three variables. Units are inherited from the anomaly field:
+SubC `ts_anomaly` stays in `K`. A K anomaly equals a °C anomaly numerically,
+but plot labels follow the units attr, so run `unit-convert` first if you
+need the output in `degree_Celsius`, for example to match the BoM DMI from
+`iod-enso-fetch`.
 
 | Variable | Meaning |
 | --- | --- |
@@ -92,8 +95,15 @@ keeps weak and strong events comparable across leads and inits.
 
 ## Example: SubC MME surface-temperature anomaly
 
+`subc-mme-fetch` requires `--outlook` (`7d`, `15d`, or `30d`). Each outlook
+is a separate forecast of the mean over its own window, so no single one is
+"the" SubC IOD forecast. Use `30d` for a month-ahead IOD, or fetch all three
+to compare. Check the probed init first: SubC can lag by weeks.
+
 ```bash
-uv run skills/subc-mme-fetch/scripts/fetch.py --date 2025-12-01 -v ts -o /tmp/subc_ts.zarr
+INIT=$(uv run skills/subc-mme-fetch/scripts/fetch.py --outlook 30d --probe-latest ts)
+uv run skills/subc-mme-fetch/scripts/fetch.py --date "$INIT" --outlook 30d -v ts \
+    --bbox 15/45/-15/115 -o /tmp/subc_ts.zarr
 uv run ${CLAUDE_SKILL_DIR}/scripts/iod.py -i /tmp/subc_ts.zarr -v ts_anomaly -o /tmp/iod.zarr
 ```
 
@@ -102,7 +112,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/iod.py -i /tmp/subc_ts.zarr -v ts_anomaly -o 
 ```bash
 # Pseudocode pipeline with forecasting-skills helpers:
 # 1) fetch SST observations → sst.zarr
-# 2) reduce over a climatology window → sst_climo.zarr
+# 2) summarize-dim (mean over time) on a climatology window → sst_climo.zarr
 # 3) difference sst.zarr − sst_climo.zarr → sst_anom.zarr (rename if needed)
 uv run ${CLAUDE_SKILL_DIR}/scripts/iod.py -i /tmp/sst_anom.zarr -v sst_anomaly -o /tmp/iod_obs.zarr
 ```

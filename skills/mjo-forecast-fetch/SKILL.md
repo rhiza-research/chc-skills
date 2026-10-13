@@ -1,6 +1,6 @@
 ---
 name: mjo-forecast-fetch
-description: Fetch the latest CPC CLIVAR Madden–Julian Oscillation (MJO) Wheeler–Hendon phase-space forecast PNG for GEFS, GEFS-extended, CFS, CMC, JMA, ECMWF, ECMWF extended-range, or BoM ACCESS-S1 (bias-corrected preferred by default). Use when a task needs the published MJO RMM diagram image from https://www.cpc.ncep.noaa.gov/products/precip/CWlink/MJO/CLIVAR/clivar_wh.shtml; does not produce gridded data.
+description: Fetch the latest CPC CLIVAR Madden–Julian Oscillation (MJO) Wheeler–Hendon phase-space forecast PNG for GEFS, GEFS-extended, CFS, CMC, JMA, ECMWF, ECMWF extended-range, or BoM ACCESS-S1 (bias-corrected preferred by default). For "ECMWF": `ecmwf` is the daily 15-day ensemble; `ecmwf-extended-range` is the 46-day run (twice weekly) — use it for weekly / sub-seasonal (week 2–4) briefings. Use when a task needs the published MJO RMM diagram image from https://www.cpc.ncep.noaa.gov/products/precip/CWlink/MJO/CLIVAR/clivar_wh.shtml; does not produce gridded data.
 license: MIT
 compatibility: Requires Python 3.12 and uv. Fetches over HTTPS from www.cpc.ncep.noaa.gov; no credentials required.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py *)
@@ -46,6 +46,12 @@ Not every system publishes both a raw and a bias-corrected diagram. Cells marked
 | `ecmwf-extended-range` | `EMON_BC.png` | `EMON.png` | EMOM / EMON — ECMWF extended-range (2× weekly) |
 | `bom` | `BOMM_BC.png` | `BOMM.png` | BOMM / BOMA — BoM ACCESS-S1 (daily, day-2 init) |
 
+**Which ECMWF?** `ecmwf` is the daily ensemble with a 15-day forecast; it
+suits the coming two weeks. `ecmwf-extended-range` is the 46-day extended
+range run, updated twice weekly; use it for a weekly sub-seasonal briefing
+that looks at weeks 2–4. Likewise `gefs` (16 days) vs `gefs-extended` (35
+days).
+
 `--bias-corrected` (default **on**) prefers the bias-corrected file when CPC
 publishes one; for models with only a raw diagram it uses that raw file.
 `--no-bias-corrected` requires a raw diagram (errors for `cfs`, which is
@@ -81,7 +87,8 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py \
 
 ### Output
 
-A PNG at `--output`. The decorator stamps `weather_skills_history` into the PNG
+A PNG at `--output`. stderr names the model, the variant used
+(`bias-corrected` or `raw`), and the URL. The decorator stamps `weather_skills_history` into the PNG
 metadata.
 
 ## Examples

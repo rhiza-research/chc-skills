@@ -1,6 +1,6 @@
 ---
 name: africa-itf
-description: Fetch the latest NOAA/CPC Africa Intertropical Front (ITF) / Intertropical Convergence Zone (ITCZ) position figure for continental Africa (default), West Africa, or East Africa. Use when a task needs the published dekadal ITF or ITCZ map from https://www.cpc.ncep.noaa.gov/products/international/itf/itcz.shtml (CPC uses both terms); does not produce gridded data.
+description: Fetch the latest NOAA/CPC Africa Intertropical Front (ITF) / Intertropical Convergence Zone (ITCZ) figure as a PNG (CPC uses both terms; https://www.cpc.ncep.noaa.gov/products/international/itf/itcz.shtml). Only the default `--location africa` is a map (continental ITF position, current vs mean). `west-africa` and `east-africa` are latitude-vs-dekad time series averaged over a fixed longitude band — east is 20E–35E, which excludes Kenya — not regional maps. Latest dekad only (printed on stderr); does not produce gridded data.
 license: MIT
 compatibility: Requires Python 3.12 and uv. Fetches over HTTPS from www.cpc.ncep.noaa.gov; no credentials required.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py *)
@@ -26,6 +26,12 @@ Source page (ITF / ITCZ):
 
 https://www.cpc.ncep.noaa.gov/products/international/itf/itcz.shtml
 
+**Only `africa` is a map.** `west-africa` and `east-africa` are line charts of
+the ITF's mean latitude against dekad since April, averaged over a fixed
+longitude band (CPC: "Mean Eastern Portion of the ITF: Averaged 20E to 35E").
+The eastern band lies west of Kenya (34–42E), so for a Kenya or Horn of Africa
+briefing use the continental `africa` map.
+
 Image URLs are **static** (CPC updates the same filenames in place each
 dekadal analysis). Upstream formats are JPEG (continental map) or PNG bytes
 under a `.gif` suffix (regional time series); this skill always writes PNG.
@@ -42,8 +48,8 @@ under a `.gif` suffix (regional time series); this skill always writes PNG.
 
 - User asks for the Africa **ITF** or **ITCZ** position, map, or latitude
   time series (CPC treats them as the same product).
-- Need the published dekadal ITF/ITCZ position map or west/east latitude time
-  series.
+- Need the published dekadal ITF/ITCZ position map (`africa`) or the west/east
+  latitude time series.
 - Prefer the official CPC figure rather than reconstructing ITF/ITCZ positions.
 
 ## When not to use
@@ -62,13 +68,16 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py \
 
 ### Arguments
 
-- `--location` — `africa` (default), `west-africa`, or `east-africa`.
+- `--location` — `africa` (default, the only map), `west-africa` or
+  `east-africa` (latitude-vs-dekad time series; east = 20E–35E band).
 - `--output`, `-o` — PNG output path.
 
 ### Output
 
 A PNG at `--output`. The decorator stamps `weather_skills_history` into the PNG
-metadata.
+metadata. stderr names the analysed dekad read from the CPC page text (e.g.
+`Analysed dekad: September 21-30`); the images themselves carry no
+machine-readable date.
 
 ## Examples
 

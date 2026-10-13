@@ -1,6 +1,6 @@
 ---
 name: resolve-chc-region
-description: Resolve a CHC region — the Tana River basin, Kenya's official KNSDI national and county boundaries, the Kenya OND briefing box (central/eastern Kenya, 5°S–5°N, 36.5–42°E), and East Africa clipped at 15°S — to a lat/lon bbox and optionally its boundary polygon GeoJSON. Use this, not resolve-region, whenever a task names the Tana River basin / Tana basin / Tana catchment (resolve-region has no basins and its Nominatim fallback returns an unrelated basin), or needs the Kenya boundary or Kenya county lines for a Kenya map (--counties-geojson for plot outline layers), or names the Kenya OND region / Kenya OND / CE Kenya box, or East Africa for a CHC briefing map (resolve-region's East Africa is the full UN Eastern Africa grouping, down to Madagascar and Zimbabwe). Other countries, single counties (including Tana River County), named regions, and landmarks go to resolve-region; bare "Tana River" is ambiguous, so ask.
+description: Resolve a CHC region — the Tana River basin (a supplied ~126,000 km² outline, larger than HydroBASINS, so basin totals differ from other basin products), Kenya's official KNSDI national and county boundaries, the Kenya OND briefing box (central/eastern Kenya, 5°S–5°N, 36.5–42°E), and East Africa clipped at 15°S — to a lat/lon bbox and optionally its boundary polygon GeoJSON. Use this, not resolve-region, whenever a task names the Tana River basin / Tana basin / Tana catchment (resolve-region has no basins and its Nominatim fallback returns an unrelated basin), or needs the Kenya boundary or Kenya county lines for a Kenya map (--counties-geojson for plot outline layers), or names the Kenya OND region / Kenya OND (briefing) box / CE Kenya, or East Africa for a CHC briefing map (resolve-region's East Africa is the full UN Eastern Africa grouping, down to Madagascar and Zimbabwe). Other countries, single counties (including Tana River County), named regions, and landmarks go to resolve-region; bare "Tana River" is ambiguous, so ask.
 license: MIT
 compatibility: Requires Python 3.12 and uv.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/resolve.py *)
@@ -29,7 +29,7 @@ everything else, weather-skills `resolve-region` is the right tool.
 |---|---|
 | Tana River **basin** / Tana basin / Tana catchment | `resolve-chc-region` (this skill) |
 | The Kenya boundary, or Kenya county lines on a map | `resolve-chc-region Kenya` (this skill) |
-| Kenya OND region / Kenya OND / CE Kenya (the OND briefing box) | `resolve-chc-region "Kenya OND region"` (this skill) |
+| Kenya OND region / Kenya OND briefing box / CE Kenya | `resolve-chc-region "Kenya OND region"` (this skill) |
 | East Africa for a CHC briefing (stops at 15°S) | `resolve-chc-region "East Africa"` (this skill) |
 | Eastern Africa, the full UN grouping | `resolve-region "Eastern Africa"` |
 | Tana River **County** (the administrative unit) | `resolve-region kenya-tana_river` |
@@ -68,27 +68,23 @@ BBOX=$(uv run ${CLAUDE_SKILL_DIR}/scripts/resolve.py "Tana River basin" --geojso
 # then e.g. clip-region --bbox "$BBOX" --geojson /tmp/tana.json ...
 ```
 
-Kenya map with KNSDI county lines and the Tana basin (KMSA rainfall colors
-from the `chc-plot-theme` skill):
+For a Kenya map with KNSDI county lines and the Tana basin outline, write
+both polygons and pass them as `plot --layer outline:` files; the full KMSA
+rainfall map recipe (colors, layer styles, `admin1` off) is in
+`chc-plot-theme`:
 
 ```bash
 BBOX=$(uv run ${CLAUDE_SKILL_DIR}/scripts/resolve.py Kenya --geojson /tmp/kenya.json --counties-geojson /tmp/kenya_counties.json)
 uv run ${CLAUDE_SKILL_DIR}/scripts/resolve.py "Tana basin" --geojson /tmp/tana.json
-# CMAP=$(chc-plot-theme --colormap kmsa)
-# plot --layer heatmap:totals.zarr --layer outline:/tmp/kenya_counties.json --layer outline:/tmp/tana.json \
-#   --spec "{\"theme\": {\"colormap\": $CMAP}, \"layout\": {\"colorbar\": {\"extend\": \"max\"}},
-#            \"geo\": {\"overlays\": {\"admin1\": false}},
-#            \"layers\": [{}, {\"line\": {\"color\": \"0.3\", \"linewidth\": 0.5}}, {\"line\": {\"linewidth\": 1.6}}]}"
 ```
-
-Turn off `admin1` so the Natural Earth admin-1 lines do not double the KNSDI county lines.
 
 ### Arguments
 
 - `name` (positional) — region name or alias, case-insensitive:
   `Tana River basin`, `Tana basin`, `Tana River catchment`, `Tana catchment`;
   `Kenya`, `KEN`, `Kenya KNSDI`, `Kenya counties`;
-  `Kenya OND region`, `Kenya OND`, `OND Kenya`, `Central-Eastern Kenya`,
+  `Kenya OND region`, `Kenya OND`, `Kenya OND box`, `Kenya OND briefing box`,
+  `OND Kenya`, `Central-Eastern Kenya`,
   `Central and Eastern Kenya`, `CE Kenya`;
   `East Africa`.
 - `--geojson` — optional path; writes the boundary polygon (in addition to
@@ -113,7 +109,7 @@ Turn off `admin1` so the Natural Earth admin-1 lines do not double the KNSDI cou
 |---|---|---|---|
 | Tana River basin (Kenya) | Tana basin, Tana River catchment, Tana catchment | 0.48/36.5972/-3.0402/41.5605 | ~126,000 km² |
 | Kenya (KNSDI) | KEN, Kenya KNSDI, Kenya counties | 5.4141/33.9098/-4.7053/41.906 | ~591,500 km² |
-| Kenya OND region | Kenya OND, OND Kenya, Central-Eastern Kenya, Central and Eastern Kenya, CE Kenya | 5.0/36.5/-5.0/42.0 | rectangle |
+| Kenya OND region | Kenya OND, Kenya OND box, Kenya OND briefing box, OND Kenya, Central-Eastern Kenya, Central and Eastern Kenya, CE Kenya | 5.0/36.5/-5.0/42.0 | rectangle |
 | East Africa | — | 17.9983/21.9035/-15.0/51.1339 | Eastern Africa south to 15°S |
 
 ## Data
@@ -123,11 +119,17 @@ properties (name, level, country, source, ...) are what `--geojson` writes;
 the script only adds `bbox`. To add a region, drop in its file and list its
 names in `REGIONS` in `scripts/resolve.py`.
 
-**Tana River basin.** `data/tana_river_basin.geojson`: converted from the
-supplied `Tana Basin.shp` (single polygon, WGS84 lon/lat; no `.prj` or
-attribute table came with it). Coordinates rounded to 4 decimals (~11 m).
-It reaches farther east (to ~41.56° E) than the earlier HydroBASINS
-dissolve, which covered ~95,250 km².
+**Tana River basin.** `data/tana_river_basin.geojson`: converted from
+`Tana Basin.shp`, supplied to this project together with the KNSDI Kenya
+county files (single polygon, WGS84 lon/lat). It came with no `.prj`,
+attribute table, or metadata, so the agency that delineated it is not
+recorded here; the feature's `source` property says "User-supplied". It is
+a broader delineation than the standard hydrological products: ~126,000 km²,
+reaching ~41.56° E along the Kenya–Somalia border, against ~95,250 km² for
+the HydroBASINS v1c Africa level-7 dissolve (`MAIN_BAS` 1070008470) this
+skill bundled before. Basin-mean or basin-total rainfall therefore differs from numbers
+computed on those outlines; say which outline you used when comparing.
+Coordinates rounded to 4 decimals (~11 m).
 
 **Kenya.** `data/kenya.geojson` (national outline, the union of the
 counties) and `data/kenya_counties.geojson` (47 county polygons):

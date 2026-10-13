@@ -109,6 +109,8 @@ def test_kenya_aliases(mod, alias):
         "Kenya OND region",
         "Kenya OND",
         "OND Kenya",
+        "Kenya OND box",
+        "Kenya OND briefing box",
         "Central-Eastern Kenya",
         "Central and Eastern Kenya",
         "CE Kenya",
