@@ -1,6 +1,6 @@
 ---
-name: resolve-kenya-regions
-description: Resolve a Kenya region — the Tana River basin, Kenya's official KNSDI national and county boundaries, the Kenya OND briefing box (central/eastern Kenya, 5°S–5°N, 36.5–42°E), and East Africa clipped at 15°S — to a lat/lon bbox and optionally its boundary polygon GeoJSON. Use this, not resolve-region, whenever a task names the Tana River basin / Tana basin / Tana catchment (resolve-region has no basins and its Nominatim fallback returns an unrelated basin), or needs the Kenya boundary or Kenya county lines for a Kenya map (--counties-geojson for plot outline layers), or names the Kenya OND region / Kenya OND / CE Kenya box, or East Africa for a CHC briefing map (resolve-region's East Africa is the full UN Eastern Africa grouping, down to Madagascar and Zimbabwe). Other countries, single counties (including Tana River County), named regions, and landmarks go to resolve-region; bare "Tana River" is ambiguous, so ask.
+name: resolve-chc-region
+description: Resolve a CHC region — the Tana River basin, Kenya's official KNSDI national and county boundaries, the Kenya OND briefing box (central/eastern Kenya, 5°S–5°N, 36.5–42°E), and East Africa clipped at 15°S — to a lat/lon bbox and optionally its boundary polygon GeoJSON. Use this, not resolve-region, whenever a task names the Tana River basin / Tana basin / Tana catchment (resolve-region has no basins and its Nominatim fallback returns an unrelated basin), or needs the Kenya boundary or Kenya county lines for a Kenya map (--counties-geojson for plot outline layers), or names the Kenya OND region / Kenya OND / CE Kenya box, or East Africa for a CHC briefing map (resolve-region's East Africa is the full UN Eastern Africa grouping, down to Madagascar and Zimbabwe). Other countries, single counties (including Tana River County), named regions, and landmarks go to resolve-region; bare "Tana River" is ambiguous, so ask.
 license: MIT
 compatibility: Requires Python 3.12 and uv.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/resolve.py *)
@@ -9,9 +9,9 @@ metadata:
   catalog-group: agent-tooling
 ---
 
-# resolve-kenya-regions
+# resolve-chc-region
 
-Look up a bounding box and boundary polygon for the Kenya regions bundled
+Look up a bounding box and boundary polygon for the CHC regions bundled
 here: the **Tana River basin**, **Kenya** (official KNSDI national
 outline, plus all 47 county boundaries), the **Kenya OND region**
 briefing box, and **East Africa** clipped at 15°S.
@@ -27,10 +27,10 @@ everything else, weather-skills `resolve-region` is the right tool.
 
 | The user asks for… | Use |
 |---|---|
-| Tana River **basin** / Tana basin / Tana catchment | `resolve-kenya-regions` (this skill) |
-| The Kenya boundary, or Kenya county lines on a map | `resolve-kenya-regions Kenya` (this skill) |
-| Kenya OND region / Kenya OND / CE Kenya (the OND briefing box) | `resolve-kenya-regions "Kenya OND region"` (this skill) |
-| East Africa for a CHC briefing (stops at 15°S) | `resolve-kenya-regions "East Africa"` (this skill) |
+| Tana River **basin** / Tana basin / Tana catchment | `resolve-chc-region` (this skill) |
+| The Kenya boundary, or Kenya county lines on a map | `resolve-chc-region Kenya` (this skill) |
+| Kenya OND region / Kenya OND / CE Kenya (the OND briefing box) | `resolve-chc-region "Kenya OND region"` (this skill) |
+| East Africa for a CHC briefing (stops at 15°S) | `resolve-chc-region "East Africa"` (this skill) |
 | Eastern Africa, the full UN grouping | `resolve-region "Eastern Africa"` |
 | Tana River **County** (the administrative unit) | `resolve-region kenya-tana_river` |
 | Another country, multi-country region, one county / state by name, or landmark | `resolve-region` |

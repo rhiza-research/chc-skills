@@ -1,4 +1,4 @@
-"""Correctness tests for resolve-kenya-regions."""
+"""Correctness tests for resolve-chc-region."""
 
 import json
 
@@ -12,12 +12,12 @@ _KENYA_BBOX = (5.4141, 33.9098, -4.7053, 41.906)
 
 @pytest.fixture(scope="module")
 def mod():
-    return load_skill("resolve-kenya-regions", "resolve")
+    return load_skill("resolve-chc-region", "resolve")
 
 
 @pytest.fixture
 def resolve(mod):
-    return mod.resolve_kenya_regions
+    return mod.resolve_chc_region
 
 
 def test_tana_basin_prints_bbox(capsys, resolve):
