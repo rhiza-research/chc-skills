@@ -2,14 +2,9 @@
 # requires-python = ">=3.12,<3.13"
 # dependencies = [
 #   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@dev",
-#   "cftime",
 #   "fsspec",
 #   "aiohttp",
-#   "xarray",
-#   "zarr",
-#   "numpy",
 #   "netcdf4",
-#   "pint-xarray>=0.6",
 # ]
 # ///
 """Fetch one CHC SubC MME outlook (7d, 15d, or 30d) and write a forecast Zarr."""
@@ -224,7 +219,6 @@ def _resolve_vars(variable) -> list[str]:
     "--probe-latest",
     nargs="?",
     const="",
-    default=None,
     metavar="VAR",
     probe=True,
     help=(
@@ -234,7 +228,7 @@ def _resolve_vars(variable) -> list[str]:
         "all six variables. Does not download fields."
     ),
 )
-def fetch(date, outlook, bbox, variable, workers, **kwargs):
+def fetch(date, outlook, bbox, variable, workers, probe_latest, **kwargs):
     """Fetch one SubC MME outlook (7d / 15d / 30d) and write a forecast Zarr.
 
     Each call returns a single-lead forecast envelope: ``time`` is the outlook
@@ -247,8 +241,8 @@ def fetch(date, outlook, bbox, variable, workers, **kwargs):
         )
     folder, lead_tag, outlook_days = OUTLOOKS[outlook]
 
-    if kwargs.get("probe_latest") is not None:
-        ident = kwargs["probe_latest"]
+    if probe_latest is not None:
+        ident = probe_latest
         if ident:
             if ident not in VARIABLES:
                 raise UsageError(

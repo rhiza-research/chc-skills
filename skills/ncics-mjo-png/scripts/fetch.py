@@ -331,7 +331,6 @@ def _download(url: str, dest: Path) -> None:
     "--probe-latest",
     nargs="?",
     const="",
-    default=None,
     metavar="IDENT",
     probe=True,
     help=(
@@ -405,7 +404,18 @@ def _download(url: str, dest: Path) -> None:
     help="Map averaging window in days (default 7). Maps only.",
 )
 def fetch(
-    date, product, variable, level, algorithm, wave, region, latitude, days, output, **kwargs
+    date,
+    product,
+    variable,
+    level,
+    algorithm,
+    wave,
+    region,
+    latitude,
+    days,
+    output,
+    probe_latest,
+    **kwargs,
 ):
     """Fetch an NCICS MJO / equatorial-wave map or Hovmöller PNG.
 
@@ -417,7 +427,7 @@ def fetch(
     CFS map. Pass ``--product hovmoller`` for the longitude-time diagram
     (default tropics 15S–15N). No Zarr input.
     """
-    if kwargs.get("probe_latest") is not None:
+    if probe_latest is not None:
         print(_latest_archive_date().isoformat())
         return
     snapshot = None

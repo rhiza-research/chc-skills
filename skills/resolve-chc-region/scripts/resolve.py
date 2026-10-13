@@ -80,7 +80,7 @@ def write(path, text, what):
     "--counties-geojson",
     help="Optional path: write one polygon per county (Kenya only), e.g. for plot outline layers",
 )
-def resolve_chc_region(name, geojson, counties_geojson=None, **kwargs):
+def resolve_chc_region(name, geojson, counties_geojson, **kwargs):
     """Resolve a CHC region (Tana River basin, Kenya KNSDI, Kenya OND box, East Africa) to a bbox and polygon."""
     key, fc = load(name)
 

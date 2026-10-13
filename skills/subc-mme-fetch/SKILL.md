@@ -109,8 +109,8 @@ Stamped with `weather_skills_source=chc-subc-mme` and `outlook=7d|15d|30d`.
 
 ### Provenance
 
-The decorator stamps `weather_skills_history` on write. Inspect with the
-`provenance` skill when available.
+The output carries a `weather_skills_history` provenance chain; inspect it
+with the `provenance` skill.
 
 ## Examples
 

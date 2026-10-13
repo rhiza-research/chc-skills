@@ -2,10 +2,7 @@
 # requires-python = ">=3.12,<3.13"
 # dependencies = [
 #   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@dev",
-#   "numpy",
 #   "pillow>=10",
-#   "xarray",
-#   "zarr",
 # ]
 # ///
 """Fetch BoM IOD / ENSO observation or ACCESS-S forecast figures or index values."""
@@ -478,7 +475,6 @@ def _resolve_output_format(output_format: str | None, output) -> str:
 @weather_skill.argument(
     "--format",
     dest="output_format",
-    default=None,
     choices=list(FORMAT_CHOICES),
     help=(
         "figure (PNG graph or plume) or data (Zarr of official index values). "
@@ -497,7 +493,6 @@ def _resolve_output_format(output_format: str | None, output) -> str:
     "--probe-latest",
     nargs="?",
     const="",
-    default=None,
     probe=True,
     help=(
         "Print the latest available YYYY-MM-DD on stdout and exit. "
@@ -505,7 +500,7 @@ def _resolve_output_format(output_format: str | None, output) -> str:
         "current graph or text series, or none."
     ),
 )
-def fetch(index, product, date, output, output_format, **kwargs):
+def fetch(index, product, date, output, output_format, probe_latest, **kwargs):
     """Fetch a BoM IOD or ENSO observation or ACCESS-S forecast PNG or Zarr.
 
     Observation products are the current overwritten clim_data timeseries
@@ -521,7 +516,7 @@ def fetch(index, product, date, output, output_format, **kwargs):
 
     kind = _resolve_output_format(output_format, output)
 
-    if kwargs.get("probe_latest") is not None:
+    if probe_latest is not None:
         if product == "forecast":
             latest = _resolve_issue_date(None, _archive_dates())
             print(latest.isoformat())
