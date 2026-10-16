@@ -5,6 +5,8 @@
 #   "fsspec",
 #   "aiohttp",
 #   "netcdf4",
+#   "numpy",
+#   "xarray",
 # ]
 # ///
 """Fetch one CHC SubC MME outlook (7d, 15d, or 30d) and write a forecast Zarr."""
