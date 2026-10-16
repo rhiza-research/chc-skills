@@ -1,0 +1,8 @@
+{
+  "defaults": {
+    "precip": "ppt_total",
+    "precip_anomaly": "ppt_anom_season",
+    "precip_poa": "ppt_poa",
+    "spi": "spi"
+  }
+}

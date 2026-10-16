@@ -113,3 +113,19 @@ def test_kmsa_theme_file(mod):
     colormap = mod.COLORMAPS["kmsa"]
     assert kmsa["bounds"][:-1] == colormap["bounds"]
     assert kmsa["colors"] == colormap["colors"][1:]
+
+
+def test_chc_theme_file(mod, capsys):
+    run_skill(mod.chc_plot_theme, "--theme", "chc")
+    path = Path(capsys.readouterr().out.strip())
+    assert path == mod.THEMES["chc"] and path.is_file()
+    theme = json.loads(path.read_text())
+    # Classic CHC classes for every rainfall kind, by the plot skill's built-in names.
+    assert theme == {
+        "defaults": {
+            "precip": "ppt_total",
+            "precip_anomaly": "ppt_anom_season",
+            "precip_poa": "ppt_poa",
+            "spi": "spi",
+        }
+    }

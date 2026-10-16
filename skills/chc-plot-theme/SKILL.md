@@ -1,6 +1,6 @@
 ---
 name: chc-plot-theme
-description: "Print the path of the Kenya Meteorological Department (KMSA) plot theme file for plot --theme-file, or a CHC or KMSA rainfall colormap as a JSON object for a plot trace's meta.palette, choosing the CHC window (daily, week, month, season) from a window length or a Zarr's aggregation period. Use when a rainfall map should look like a KMSA Kenya rainfall map or use the CHC precipitation classes."
+description: "Print the path of the Kenya Meteorological Department (KMSA) or classic CHC plot theme file for plot --theme-file, or a CHC or KMSA rainfall colormap as a JSON object for a plot trace's meta.palette, choosing the CHC window (daily, week, month, season) from a window length or a Zarr's aggregation period. Use when a rainfall map should look like a KMSA Kenya rainfall map or a classic CHC map, or use the CHC precipitation classes."
 license: MIT
 compatibility: Requires Python 3.12 and uv.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/theme.py *)
@@ -11,17 +11,17 @@ metadata:
 
 # chc-plot-theme
 
-Prints the path of the KMSA plot theme file, or one rainfall colormap as a single line of JSON (`name`, `colors`, `bounds`), for the weather-skills `plot` skills.
+Prints the path of a KMSA or CHC plot theme file, or one rainfall colormap as a single line of JSON (`name`, `colors`, `bounds`), for the weather-skills `plot` skills.
 
 ## Usage
 
 ```bash
-uv run ${CLAUDE_SKILL_DIR}/scripts/theme.py --theme kmsa
+uv run ${CLAUDE_SKILL_DIR}/scripts/theme.py --theme kmsa|chc
 uv run ${CLAUDE_SKILL_DIR}/scripts/theme.py --colormap NAME [--window-days N | --for PATH.zarr]
 ```
 
 ### Arguments
-- `--theme` — `kmsa`: print the path of the KMSA theme file. Pass the path to `plot --theme-file` (also `plot-timeseries`, `plot-verify`). Exactly one of `--theme` and `--colormap` is required.
+- `--theme` — `kmsa` or `chc`: print the path of that theme file. Pass the path to `plot --theme-file` (also `plot-timeseries`, `plot-verify`). Exactly one of `--theme` and `--colormap` is required.
 - `--colormap` — a name from the table below, or the family `chc_precip` / `chc_precip_anom` with `--window-days` or `--for` to pick the window.
 - `--window-days` — window length in days; only with a family name: under 2 → `daily`, up to 10 (a week or dekad) → `week`, under 40 → `month`, longer → `season`. stderr names the choice.
 - `--for` — Zarr you will plot, only with a family name; the window comes from its data variables' `aggregation_period`. Exits 2 unless exactly one period is found. `--window-days` wins when both are given.
@@ -29,6 +29,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/theme.py --colormap NAME [--window-days N | -
 | Theme | Draws |
 |---|---|
 | `kmsa` | Rainfall totals in the KMSA classes < 1, 2 - 10, 11 - 20, 21 - 50, 51 - 70, 71 - 100, > 100 mm (white, pale green, green, light blue, blue, orange, red-orange), one labelled legend box per class; Arial text; black national borders, dark grey county lines. Other fields keep the standard colors. |
+| `chc` | Classic CHC map classes, fixed whatever the period: totals in `ppt_total` (0, 2, 5, 10, 25, 50, 75, 100, 150, 200, 300, 500, 750, 1000, 1500, 2500 mm), anomalies in the full CHC anomaly classes (±10 … ±500 mm), percent of normal in `ppt_poa`, SPI in `spi`. The standard look instead crops the CHC hues to a window picked from `aggregation_period`. Other fields keep the standard colors. |
 
 | Colormap | Classes |
 |---|---|
@@ -41,7 +42,8 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/theme.py --colormap NAME [--window-days N | -
 
 ### Notes
 - The theme and colormaps are for period totals or anomalies in mm, so aggregate and convert to totals before plotting.
-- With `--theme-file`, rainfall totals get the KMSA classes with no spec changes. The file also names the palette `kmsa`, so `"meta": {"palette": "kmsa"}` puts it on one trace.
+- With `--theme-file`, rainfall fields get the theme's classes with no spec changes. For daily or few-day totals under `--theme chc`, the CHC short-window classes fit better: set `"meta": {"palette": "ppt_short"}` (0.5 … 200 mm).
+- With `--theme kmsa`, rainfall totals get the KMSA classes. The file also names the palette `kmsa`, so `"meta": {"palette": "kmsa"}` puts it on one trace.
 - Put the whole `--colormap` object, not its name, in a trace's `meta.palette`; `plot` has no `kmsa` or `chc_precip_*` palette of its own.
 - The lowest KMSA class and the near-zero CHC anomaly class are white, like masked cells; say so in a caption when the map is masked.
 - Neither carries dates; put the period in the title.

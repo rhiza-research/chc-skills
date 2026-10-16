@@ -4,7 +4,7 @@
 #   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@dev",
 # ]
 # ///
-"""Print the KMSA plot theme file path, or one CHC or KMSA rainfall colormap as JSON."""
+"""Print a KMSA or CHC plot theme file path, or one CHC or KMSA rainfall colormap as JSON."""
 
 import json
 import sys
@@ -19,7 +19,7 @@ _SKILL_VERSION = "0.0.1"
 DATA = Path(__file__).resolve().parent.parent / "data"
 THEME = DATA / "chc_theme.json"
 COLORMAPS = json.loads(THEME.read_text(encoding="utf-8"))["colormaps"]
-THEMES = {"kmsa": DATA / "kmsa_theme.json"}
+THEMES = {"kmsa": DATA / "kmsa_theme.json", "chc": DATA / "chc_classic_theme.json"}
 # CHC families whose window (daily / week / month / season) --window-days or --for picks.
 FAMILIES = ("chc_precip", "chc_precip_anom")
 
@@ -51,7 +51,7 @@ FAMILIES = ("chc_precip", "chc_precip_anom")
     help="Zarr to plot; the window is read from its aggregation_period attr.",
 )
 def chc_plot_theme(theme=None, colormap=None, window_days=None, for_ds=None, **kwargs):
-    """Print the KMSA plot theme file path, or one CHC or KMSA rainfall colormap as JSON."""
+    """Print a KMSA or CHC plot theme file path, or one CHC or KMSA rainfall colormap as JSON."""
     if (theme is None) == (colormap is None):
         raise UsageError("pass exactly one of --theme or --colormap")
     if theme is not None:

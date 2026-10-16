@@ -75,7 +75,9 @@ weather-skills transforms and plotters when those are available (for example
 - **`chc-plot-theme`**: `--theme kmsa` prints the path of the KMSA plot
   theme file; pass it to `plot --theme-file` when a Kenya rainfall map should
   look like a KMSA map (KMSA classes and legend labels for rainfall totals,
-  KMSA-style text and borders, no spec changes). `--colormap NAME` prints one
+  KMSA-style text and borders, no spec changes). `--theme chc` does the same
+  for the classic CHC map classes (fixed `ppt_total` totals, CHC anomaly,
+  percent-of-normal and SPI classes). `--colormap NAME` prints one
   rainfall colormap as JSON (`chc_precip_daily|week|month|season`,
   `chc_precip_anom_daily|week|month|season`, `kmsa`) for a trace's
   `meta.palette` (the object, not just the name). Pass `--colormap
