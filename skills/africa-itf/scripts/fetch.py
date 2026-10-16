@@ -5,7 +5,7 @@
 #   "pillow>=10",
 # ]
 # ///
-"""Fetch the latest NOAA/CPC Africa Intertropical Front (ITF) position figure."""
+"""Download the latest NOAA/CPC Africa Intertropical Front (ITF) figure as a PNG."""
 
 from __future__ import annotations
 
@@ -94,14 +94,12 @@ def _download_as_png(url: str, dest: Path) -> None:
     ),
 )
 def fetch(location, output, **kwargs):
-    """Fetch the latest NOAA/CPC Africa ITF position figure as a PNG.
-
-    Downloads a pre-rendered dekadal ITF figure (continental map, or a west/east
-    latitude time series) from the static CPC URLs on
-    https://www.cpc.ncep.noaa.gov/products/international/itf/itcz.shtml
-    (filenames updated in place). Converts JPEG/GIF-labeled sources to PNG.
-    No Zarr input — figure-only skill. Prints the analysed dekad on stderr.
-    """
+    """Download the latest NOAA/CPC Africa Intertropical Front (ITF) figure as a PNG."""
+    # Downloads a pre-rendered dekadal ITF figure (continental map, or a west/east
+    # latitude time series) from the static CPC URLs on
+    # https://www.cpc.ncep.noaa.gov/products/international/itf/itcz.shtml
+    # (filenames updated in place). Converts JPEG/GIF-labeled sources to PNG.
+    # No Zarr input — figure-only skill. Prints the analysed dekad on stderr.
     url = _image_url(location)
     output = Path(output)
     print(f"Fetching {location}: {url}", file=sys.stderr)

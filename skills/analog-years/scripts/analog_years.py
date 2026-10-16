@@ -4,7 +4,7 @@
 #   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@dev",
 # ]
 # ///
-"""Return analog years for a given --date (stub: 2026 only)."""
+"""Print the historical analog years for a date."""
 
 import json
 import sys
@@ -42,7 +42,7 @@ def analogs_for(year):
     help="stdout format: space-separated years (default) or JSON",
 )
 def analog_years(date, emit, **kwargs):
-    """Return analog years for a given --date (stub: 2026 only)."""
+    """Print the historical analog years for a date."""
     years = analogs_for(date.year)
     print(f"year={date.year}", file=sys.stderr)
     if emit == "json":

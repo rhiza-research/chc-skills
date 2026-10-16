@@ -10,7 +10,7 @@
 #   "xarray",
 # ]
 # ///
-"""Fetch one CHC SubC MME outlook (7d, 15d, or 30d) and write a forecast Zarr."""
+"""Fetch one CHC SubC multi-model-ensemble outlook for an init date as a weather-skills Zarr."""
 
 from __future__ import annotations
 
@@ -243,12 +243,10 @@ def _resolve_vars(variable) -> list[str]:
     ),
 )
 def fetch(date, outlook, bbox, variable, workers, probe_latest, **kwargs):
-    """Fetch one SubC MME outlook (7d / 15d / 30d) and write a forecast Zarr.
-
-    Each call returns a single-lead forecast envelope: scalar ``time`` is the
-    init (``--date``), ``step`` is ``0 days`` (the window start), and the window
-    length is each variable's ``aggregation_period``.
-    """
+    """Fetch one CHC SubC multi-model-ensemble outlook for an init date as a weather-skills Zarr."""
+    # Each call returns a single-lead forecast envelope: scalar ``time`` is the
+    # init (``--date``), ``step`` is ``0 days`` (the window start), and the window
+    # length is each variable's ``aggregation_period``.
     if outlook not in OUTLOOKS:
         raise UsageError(
             f"unknown --outlook {outlook!r}; choose one of: {', '.join(OUTLOOK_CHOICES)}"

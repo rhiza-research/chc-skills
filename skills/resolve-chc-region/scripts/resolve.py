@@ -4,7 +4,7 @@
 #   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@dev",
 # ]
 # ///
-"""Resolve a CHC region (Tana River basin, Kenya KNSDI, Kenya OND box, East Africa) to a bbox and polygon."""
+"""Resolve a bundled CHC region to a lat/lon bounding box and optional boundary GeoJSON."""
 
 import json
 import sys
@@ -83,7 +83,7 @@ def write(path, text, what):
     help="Optional path: write one polygon per county (Kenya only), e.g. for plot outline layers",
 )
 def resolve_chc_region(name, geojson, counties_geojson, **kwargs):
-    """Resolve a CHC region (Tana River basin, Kenya KNSDI, Kenya OND box, East Africa) to a bbox and polygon."""
+    """Resolve a bundled CHC region to a lat/lon bounding box and optional boundary GeoJSON."""
     key, fc = load(name)
 
     # Write files before printing, so a failed write never leaves a bbox on stdout.
