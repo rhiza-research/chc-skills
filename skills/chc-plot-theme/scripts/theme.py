@@ -4,7 +4,7 @@
 #   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@dev",
 # ]
 # ///
-"""Print a KMSA or CHC plot theme file path, or one CHC or KMSA rainfall colormap as JSON."""
+"""Print a KMSA or CHC plot theme, or one CHC or KMSA rainfall colormap, as JSON."""
 
 import json
 import sys
@@ -28,7 +28,7 @@ FAMILIES = ("chc_precip", "chc_precip_anom")
 @weather_skill.argument(
     "--theme",
     choices=list(THEMES),
-    help="Print the path of this plot theme file, for plot --theme-file.",
+    help="Print this plot theme as JSON; save it to a file for plot --theme-file.",
 )
 @weather_skill.argument(
     "--colormap",
@@ -51,13 +51,13 @@ FAMILIES = ("chc_precip", "chc_precip_anom")
     help="Zarr to plot; the window is read from its aggregation_period attr.",
 )
 def chc_plot_theme(theme=None, colormap=None, window_days=None, for_ds=None, **kwargs):
-    """Print a KMSA or CHC plot theme file path, or one CHC or KMSA rainfall colormap as JSON."""
+    """Print a KMSA or CHC plot theme, or one CHC or KMSA rainfall colormap, as JSON."""
     if (theme is None) == (colormap is None):
         raise UsageError("pass exactly one of --theme or --colormap")
     if theme is not None:
         if window_days is not None or for_ds is not None:
             raise UsageError("--window-days / --for go with --colormap, not --theme.")
-        print(THEMES[theme])
+        sys.stdout.write(THEMES[theme].read_text(encoding="utf-8"))
         return
 
     if for_ds is not None and window_days is None:

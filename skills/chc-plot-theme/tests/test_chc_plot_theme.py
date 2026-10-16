@@ -1,7 +1,6 @@
 """Correctness tests for chc-plot-theme."""
 
 import json
-from pathlib import Path
 
 import pytest
 from conftest import load_skill, make_gridded, run_skill, write_zarr
@@ -86,10 +85,11 @@ def test_window_days_rejected_for_fixed_colormap(mod):
     assert exc.value.code != 0
 
 
-def test_prints_kmsa_theme_path(mod, capsys):
-    run_skill(mod.chc_plot_theme, "--theme", "kmsa")
-    path = Path(capsys.readouterr().out.strip())
-    assert path == mod.THEMES["kmsa"] and path.is_file()
+@pytest.mark.parametrize("name", ["kmsa", "chc"])
+def test_prints_theme_content(mod, capsys, name):
+    # The theme itself, not a path: plot runs in its own sandbox and cannot read this skill's files.
+    run_skill(mod.chc_plot_theme, "--theme", name)
+    assert json.loads(capsys.readouterr().out) == json.loads(mod.THEMES[name].read_text())
 
 
 @pytest.mark.parametrize("args", [(), ("--theme", "kmsa", "--colormap", "kmsa")])
@@ -115,11 +115,8 @@ def test_kmsa_theme_file(mod):
     assert kmsa["colors"] == colormap["colors"][1:]
 
 
-def test_chc_theme_file(mod, capsys):
-    run_skill(mod.chc_plot_theme, "--theme", "chc")
-    path = Path(capsys.readouterr().out.strip())
-    assert path == mod.THEMES["chc"] and path.is_file()
-    theme = json.loads(path.read_text())
+def test_chc_theme_file(mod):
+    theme = json.loads(mod.THEMES["chc"].read_text())
     assert set(theme) == {"palettes", "defaults"}
     # Every rainfall kind uses a palette the file spells out, not a plot built-in.
     assert theme["defaults"] == {

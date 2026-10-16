@@ -72,8 +72,8 @@ weather-skills transforms and plotters when those are available (for example
   latitude-vs-dekad time series over fixed longitude bands (east = 20–35E,
   which excludes Kenya). stderr names the analysed dekad. Users may say ITF
   or ITCZ — same CPC product. Figure-only; no gridded data.
-- **`chc-plot-theme`**: `--theme kmsa` prints the path of the KMSA plot
-  theme file; pass it to `plot --theme-file` when a Kenya rainfall map should
+- **`chc-plot-theme`**: `--theme kmsa` prints the KMSA plot theme as
+  JSON; save it to a `.json` file and pass that to `plot --theme-file` when a Kenya rainfall map should
   look like a KMSA map (KMSA classes and legend labels for rainfall totals,
   KMSA-style text and borders, no spec changes). `--theme chc` does the same
   for the classic CHC map classes (fixed `ppt_total` totals, CHC anomaly,
