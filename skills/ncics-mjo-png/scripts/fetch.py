@@ -19,7 +19,7 @@ from pathlib import Path
 from weather_skills_core import DataError, UsageError, weather_skill
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "0.0.1"
+_SKILL_VERSION = "0.0.2"
 
 # Live figures are overwritten in place under /pub/mjo/v2/{map,hov}/.
 # Dated snapshots live under /pub/mjo/archive/YYYY/YYYY-MM-DD/v2/{map,hov}/

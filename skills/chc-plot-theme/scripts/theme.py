@@ -14,7 +14,7 @@ from weather_skills_core import Dataset, UsageError, weather_skill
 from weather_skills_core.units import parse_aggregation_period
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "0.0.1"
+_SKILL_VERSION = "0.0.2"
 
 DATA = Path(__file__).resolve().parent.parent / "data"
 THEME = DATA / "chc_theme.json"

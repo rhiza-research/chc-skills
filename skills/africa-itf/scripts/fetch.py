@@ -20,7 +20,7 @@ from PIL import Image
 from weather_skills_core import DataError, UsageError, weather_skill
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "0.0.3"
+_SKILL_VERSION = "0.0.4"
 
 # Source page (images updated in place each dekadal analysis season):
 #   https://www.cpc.ncep.noaa.gov/products/international/itf/itcz.shtml
