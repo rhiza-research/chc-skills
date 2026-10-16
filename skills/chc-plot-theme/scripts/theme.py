@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.12,<3.13"
 # dependencies = [
-#   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@dev",
+#   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@main",
 # ]
 # ///
 """Print a KMSA or CHC plot theme, or one CHC or KMSA rainfall colormap, as JSON."""
