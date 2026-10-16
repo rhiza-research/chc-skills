@@ -129,7 +129,7 @@ def test_chc_theme_file(mod, capsys):
         "spi": "spi",
     }
     palettes = theme["palettes"]
-    assert set(theme["defaults"].values()) | {"ppt_short"} == set(palettes)
+    assert set(theme["defaults"].values()) == set(palettes)
     # One color per class, or packed as under + classes + over (SPI has no under/over).
     for entry in palettes.values():
         n_classes = len(entry["bounds"]) - 1
