@@ -4,7 +4,7 @@
 #   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@dev",
 # ]
 # ///
-"""Print one CHC or KMSA rainfall colormap as JSON for plot's theme.colormap."""
+"""Print a KMSA or CHC plot theme, or one CHC or KMSA rainfall colormap, as JSON."""
 
 import json
 import sys
@@ -16,20 +16,27 @@ from weather_skills_core.units import parse_aggregation_period
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
 _SKILL_VERSION = "0.0.1"
 
-THEME = Path(__file__).resolve().parent.parent / "data" / "chc_theme.json"
+DATA = Path(__file__).resolve().parent.parent / "data"
+THEME = DATA / "chc_theme.json"
 COLORMAPS = json.loads(THEME.read_text(encoding="utf-8"))["colormaps"]
+THEMES = {"kmsa": DATA / "kmsa_theme.json", "chc": DATA / "chc_classic_theme.json"}
 # CHC families whose window (daily / week / month / season) --window-days or --for picks.
 FAMILIES = ("chc_precip", "chc_precip_anom")
 
 
 @weather_skill(name="chc-plot-theme", version=_SKILL_VERSION, output=False)
 @weather_skill.argument(
+    "--theme",
+    choices=list(THEMES),
+    help="Print this plot theme as JSON; save it to a file for plot --theme-file.",
+)
+@weather_skill.argument(
     "--colormap",
-    required=True,
     choices=[*COLORMAPS, *FAMILIES],
     help=(
-        "Colormap to print, e.g. kmsa or chc_precip_week. Pass the family chc_precip or "
-        "chc_precip_anom with --window-days or --for to have the window picked for you."
+        "Colormap to print as JSON for a trace's meta.palette, e.g. kmsa or chc_precip_week. "
+        "Pass the family chc_precip or chc_precip_anom with --window-days or --for to have "
+        "the window picked for you."
     ),
 )
 @weather_skill.argument(
@@ -43,8 +50,16 @@ FAMILIES = ("chc_precip", "chc_precip_anom")
     dest="for_ds",
     help="Zarr to plot; the window is read from its aggregation_period attr.",
 )
-def chc_plot_theme(colormap, window_days=None, for_ds=None, **kwargs):
-    """Print one CHC or KMSA rainfall colormap as JSON for plot's theme.colormap."""
+def chc_plot_theme(theme=None, colormap=None, window_days=None, for_ds=None, **kwargs):
+    """Print a KMSA or CHC plot theme, or one CHC or KMSA rainfall colormap, as JSON."""
+    if (theme is None) == (colormap is None):
+        raise UsageError("pass exactly one of --theme or --colormap")
+    if theme is not None:
+        if window_days is not None or for_ds is not None:
+            raise UsageError("--window-days / --for go with --colormap, not --theme.")
+        sys.stdout.write(THEMES[theme].read_text(encoding="utf-8"))
+        return
+
     if for_ds is not None and window_days is None:
         periods = {
             da.attrs["aggregation_period"]

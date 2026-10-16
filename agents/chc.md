@@ -72,17 +72,18 @@ weather-skills transforms and plotters when those are available (for example
   latitude-vs-dekad time series over fixed longitude bands (east = 20–35E,
   which excludes Kenya). stderr names the analysed dekad. Users may say ITF
   or ITCZ — same CPC product. Figure-only; no gridded data.
-- **`chc-plot-theme`** prints one rainfall colormap as JSON: the CHC
-  colormaps (`chc_precip_daily|week|month|season`,
-  `chc_precip_anom_daily|week|month|season`) or the KMSA rainfall-map
-  classes (`kmsa`), chosen with `--colormap`. Pass `--colormap chc_precip`
-  (or `chc_precip_anom`) with `--for ZARR` or `--window-days N` to have the
-  window picked (a dekad gets the week classes). Put the printed object in
-  `plot --spec` as `theme.colormap` (not just the name), and set
-  `layout.colorbar.extend`: `max` for totals (`kmsa`, `chc_precip_*`),
-  `both` for anomalies. Use `kmsa` when a Kenya map should look like a KMSA
-  map; its SKILL.md has the full Kenya map recipe (county lines, Tana
-  outline, `admin1` off).
+- **`chc-plot-theme`**: `--theme kmsa` prints the KMSA plot theme as
+  JSON; save it to a `.json` file and pass that to `plot --theme-file` when a Kenya rainfall map should
+  look like a KMSA map (KMSA classes and legend labels for rainfall totals,
+  KMSA-style text and borders, no spec changes). `--theme chc` does the same
+  for the classic CHC map classes (fixed `ppt_total` totals, CHC anomaly,
+  percent-of-normal and SPI classes). `--colormap NAME` prints one
+  rainfall colormap as JSON (`chc_precip_daily|week|month|season`,
+  `chc_precip_anom_daily|week|month|season`, `kmsa`) for a trace's
+  `meta.palette` (the object, not just the name). Pass `--colormap
+  chc_precip` (or `chc_precip_anom`) with `--for ZARR` or `--window-days N`
+  to have the window picked (a dekad gets the week classes). Its SKILL.md has
+  the full Kenya map recipe (county lines, Tana outline).
 - **`resolve-chc-region`** turns a bundled CHC region into an `N/W/S/E`
   bbox and, with `--geojson`, its boundary polygon: the **Tana River basin**
   (a supplied ~126,000 km² outline, larger than HydroBASINS, so basin
