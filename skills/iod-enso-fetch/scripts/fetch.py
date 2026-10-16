@@ -400,6 +400,9 @@ def _month_time_bounds(times: np.ndarray) -> np.ndarray:
 
 
 def _forecast_dataset(index: str, issue: date, payload: dict) -> xr.Dataset:
+    # Before the Relative Niño switch, --index enso fetches the traditional Niño3.4 plume.
+    if index == "enso" and _forecast_prefix(index, issue) == "":
+        index = "nino3.4"
     name, units, long_name = INDEX_VARS[index]
     times, means, freqs = _parse_forecast_json(payload)
     ds = xr.Dataset(

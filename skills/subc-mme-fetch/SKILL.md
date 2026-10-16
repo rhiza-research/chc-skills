@@ -37,7 +37,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --outlook 7d|15d|30d --probe-latest 
 ### Output
 - Dims `(step, latitude, longitude)`, `step = 0 days`, scalar `time` = init. The window runs from the init for `aggregation_period` (`7 day`, `15 day`, `30 day`), e.g. `--date 2025-12-01 --outlook 7d` covers 2025-12-01 to 2025-12-08.
 - Variables: the ensemble mean under the bare name (`pr`, `ts`, …) and `{var}_anomaly`.
-- `pr` and `pr_anomaly` are window totals in `mm` (`cell_methods: time: sum`). Temperatures are window means in `K` (`time: mean`).
+- `pr` and `pr_anomaly` are window totals in `mm` (`cell_methods: time: sum`). Temperatures are window means (`time: mean`): `tas`, `tasmax`, `tasmin` in `degree_Celsius`, `ts` and `tdps` in `K`; every temperature anomaly is a difference in `delta_degC`.
 - Attrs: `outlook`, `initialization_date`, `outlook_valid_date` (window end), `weather_skills_source = chc-subc-mme`.
 
 ### Notes

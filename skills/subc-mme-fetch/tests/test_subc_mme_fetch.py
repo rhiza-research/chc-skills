@@ -106,6 +106,7 @@ def test_fetch_one_outlook(mod, monkeypatch, tmp_path):
     assert float(ds["ts"].mean()) == pytest.approx(7.0)
     assert float(ds["ts_anomaly"].mean()) == pytest.approx(7.1)
     assert ds["ts_anomaly"].attrs["long_name"] == "Surface temperature anomaly"
+    assert ds["ts_anomaly"].attrs["units"] == "delta_degC"
     assert ds["pr_anomaly"].attrs["long_name"] == "Precipitation anomaly"
     assert ds["pr"].attrs["long_name"] == "Precipitation"
     for name in ds.data_vars:

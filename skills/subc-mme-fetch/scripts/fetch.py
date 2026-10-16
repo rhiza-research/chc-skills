@@ -332,8 +332,8 @@ def fetch(date, outlook, bbox, variable, workers, probe_latest, **kwargs):
         # Pad by just under half a grid cell so every 1-degree cell that overlaps the bbox
         # is kept, not only those whose centre falls inside it (else a country's edge strip
         # is lost). bbox_subset is inclusive, so a full half cell would also keep cells that
-        # only touch the box edge.
-        pad = float(abs(ds["latitude"].values[1] - ds["latitude"].values[0])) / 2 - 1e-6
+        # only touch the box edge. The 1e-3 margin must exceed float32 coordinate resolution.
+        pad = float(abs(ds["latitude"].values[1] - ds["latitude"].values[0])) / 2 - 1e-3
         north, west, south, east = bbox
         ds = bbox_subset(ds, (north + pad, west - pad, south - pad, east + pad))
 
@@ -351,6 +351,11 @@ def fetch(date, outlook, bbox, variable, workers, probe_latest, **kwargs):
             ds[name].attrs["cell_methods"] = "time: sum"
             # Source NetCDFs mislabel 7-day window sums as precipitation_flux.
             ds[name].attrs.pop("standard_name", None)
+        elif name.endswith("_anomaly"):
+            # A temperature anomaly is a difference: delta_degC keeps to_standard_units
+            # from applying the absolute K -> degC offset (-273.15).
+            ds[name].attrs["units"] = "delta_degC"
+            ds[name].attrs["cell_methods"] = "time: mean"
         else:
             ds[name].attrs.setdefault("units", "K")
             ds[name].attrs["cell_methods"] = "time: mean"
