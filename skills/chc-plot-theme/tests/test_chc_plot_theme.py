@@ -120,12 +120,19 @@ def test_chc_theme_file(mod, capsys):
     path = Path(capsys.readouterr().out.strip())
     assert path == mod.THEMES["chc"] and path.is_file()
     theme = json.loads(path.read_text())
-    # Classic CHC classes for every rainfall kind, by the plot skill's built-in names.
-    assert theme == {
-        "defaults": {
-            "precip": "ppt_total",
-            "precip_anomaly": "ppt_anom_season",
-            "precip_poa": "ppt_poa",
-            "spi": "spi",
-        }
+    assert set(theme) == {"palettes", "defaults"}
+    # Every rainfall kind uses a palette the file spells out, not a plot built-in.
+    assert theme["defaults"] == {
+        "precip": "ppt_total",
+        "precip_anomaly": "ppt_anom_season",
+        "precip_poa": "ppt_poa",
+        "spi": "spi",
     }
+    palettes = theme["palettes"]
+    assert set(theme["defaults"].values()) | {"ppt_short"} == set(palettes)
+    # One color per class, or packed as under + classes + over (SPI has no under/over).
+    for entry in palettes.values():
+        n_classes = len(entry["bounds"]) - 1
+        assert len(entry["colors"]) in (n_classes, n_classes + 2)
+    assert palettes["ppt_total"]["bounds"][-1] == 2500
+    assert palettes["ppt_anom_season"]["bounds"][0] == -500
