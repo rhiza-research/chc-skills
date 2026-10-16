@@ -5,7 +5,6 @@ license: MIT
 compatibility: Requires Python 3.12 and uv. Fetches over HTTPS from www.bom.gov.au; no credentials required. BoM blocks non-browser User-Agents.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py *)
 metadata:
-  version: "0.0.1"
   catalog-group: fetchers
   availability:
     shape: latest

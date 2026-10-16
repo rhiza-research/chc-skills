@@ -5,7 +5,6 @@ license: MIT
 compatibility: Requires Python 3.12 and uv. Fetches over HTTPS from ncics.org; no credentials required.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py *)
 metadata:
-  version: "0.0.1"
   catalog-group: figure
   availability:
     shape: latest
