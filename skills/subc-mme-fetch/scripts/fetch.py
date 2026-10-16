@@ -4,7 +4,10 @@
 #   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@dev",
 #   "fsspec",
 #   "aiohttp",
+#   "cftime>=1.6",
 #   "netcdf4",
+#   "numpy",
+#   "xarray",
 # ]
 # ///
 """Fetch one CHC SubC MME outlook (7d, 15d, or 30d) and write a forecast Zarr."""
