@@ -233,6 +233,13 @@ def test_probe_latest_observation(mod, monkeypatch, capsys):
     assert capsys.readouterr().out.strip() == "2026-08-31"
 
 
+def test_probe_latest_rejects_a_value(mod, capsys):
+    with pytest.raises(SystemExit) as exc:
+        run_skill(mod.fetch, "--index", "iod", "--probe-latest", "iod")
+    assert exc.value.code == 2
+    assert "takes no value" in capsys.readouterr().err
+
+
 def test_request_url_appends_cache_buster(mod, monkeypatch):
     monkeypatch.setattr(mod.time, "time", lambda: 1788374783)
     url = mod._image_url("iod")

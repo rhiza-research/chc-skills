@@ -495,7 +495,7 @@ def _resolve_output_format(output_format: str | None, output) -> str:
     const="",
     probe=True,
     help=(
-        "Print the latest available YYYY-MM-DD on stdout and exit. "
+        "Print the latest available YYYY-MM-DD on stdout and exit; takes no value. "
         "Forecast: latest ACCESS-S issue. Observation: Last-Modified of the "
         "current graph or text series, or none."
     ),
@@ -517,6 +517,11 @@ def fetch(index, product, date, output, output_format, probe_latest, **kwargs):
     kind = _resolve_output_format(output_format, output)
 
     if probe_latest is not None:
+        if probe_latest:
+            raise UsageError(
+                f"--probe-latest takes no value (got {probe_latest!r}); "
+                "choose the series with --index and --product."
+            )
         if product == "forecast":
             latest = _resolve_issue_date(None, _archive_dates())
             print(latest.isoformat())

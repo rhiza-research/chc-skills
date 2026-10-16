@@ -36,7 +36,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --probe-latest
 - `--days` — map averaging window: `1`, `2`, `3`, `5`, `7`, `10`. Default: `7`. Maps only.
 - `--latitude` — Hovmöller band: `wide` (15S–15N, also `tropics`), `eqtr` (5S–5N), `north` (5N–15N), `north2` (10N–20N), `south` (15S–5S). Default: `wide`. Hovmöllers only.
 - `--date` — archive snapshot; uses the latest snapshot on or before it (stderr names it). Default: the live figure.
-- `--probe-latest` — print the latest archive snapshot date and exit, no `-o`.
+- `--probe-latest` — print the latest archive snapshot date and exit, no `-o`. Takes no value.
 - `--output`, `-o` — PNG output path.
 
 ### Output

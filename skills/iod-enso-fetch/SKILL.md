@@ -30,7 +30,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --index INDEX --product forecast --p
 - `--product` — `observation` (the current monitoring series) or `forecast` (an ACCESS-S outlook issue). Default: `observation`.
 - `--format` — `figure` (PNG) or `data` (Zarr). Default: `data` when `-o` ends in `.zarr`, otherwise `figure`. A mismatched suffix (`data` with `.png`, `figure` with `.zarr`) exits 2.
 - `--date` — forecast issue date; uses the latest issue on or before it (stderr notes the snap). Default: latest issue. Forecast only.
-- `--probe-latest` — print a date and exit, no `-o`. Forecast: the latest ACCESS-S issue. Observation: the graph's `Last-Modified` day (the text file's with `--format data`), or `none`.
+- `--probe-latest` — print a date and exit, no `-o`; takes no value. Forecast: the latest ACCESS-S issue. Observation: the graph's `Last-Modified` day (the text file's with `--format data`), or `none`.
 - `--output`, `-o` — PNG or Zarr path.
 
 ### Output

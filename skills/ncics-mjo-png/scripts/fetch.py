@@ -335,7 +335,7 @@ def _download(url: str, dest: Path) -> None:
     probe=True,
     help=(
         "Print the latest archive snapshot YYYY-MM-DD on stdout and exit. "
-        "Does not download. Optional IDENT is ignored."
+        "Does not download. Takes no value."
     ),
 )
 @weather_skill.argument(
@@ -428,6 +428,11 @@ def fetch(
     (default tropics 15S–15N). No Zarr input.
     """
     if probe_latest is not None:
+        if probe_latest:
+            raise UsageError(
+                f"--probe-latest takes no value (got {probe_latest!r}); "
+                "it always reports the latest archive snapshot."
+            )
         print(_latest_archive_date().isoformat())
         return
     snapshot = None

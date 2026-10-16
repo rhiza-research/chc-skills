@@ -242,9 +242,9 @@ def _resolve_vars(variable) -> list[str]:
 def fetch(date, outlook, bbox, variable, workers, probe_latest, **kwargs):
     """Fetch one SubC MME outlook (7d / 15d / 30d) and write a forecast Zarr.
 
-    Each call returns a single-lead forecast envelope: ``time`` is the outlook
-    valid date (``--date`` init + outlook days) and ``step`` is the outlook
-    length. Archive init is kept as ``initialization_date``.
+    Each call returns a single-lead forecast envelope: scalar ``time`` is the
+    init (``--date``), ``step`` is ``0 days`` (the window start), and the window
+    length is each variable's ``aggregation_period``.
     """
     if outlook not in OUTLOOKS:
         raise UsageError(
@@ -328,11 +328,13 @@ def fetch(date, outlook, bbox, variable, workers, probe_latest, **kwargs):
     ds = ds.sortby("latitude").sortby("longitude")
 
     if bbox is not None:
-        # Pad by half a grid cell so every 1-degree cell that overlaps the bbox is kept,
-        # not only those whose centre falls inside it (else a country's edge strip is lost).
-        half = float(abs(ds["latitude"].values[1] - ds["latitude"].values[0])) / 2
+        # Pad by just under half a grid cell so every 1-degree cell that overlaps the bbox
+        # is kept, not only those whose centre falls inside it (else a country's edge strip
+        # is lost). bbox_subset is inclusive, so a full half cell would also keep cells that
+        # only touch the box edge.
+        pad = float(abs(ds["latitude"].values[1] - ds["latitude"].values[0])) / 2 - 1e-6
         north, west, south, east = bbox
-        ds = bbox_subset(ds, (north + half, west - half, south - half, east + half))
+        ds = bbox_subset(ds, (north + pad, west - pad, south - pad, east + pad))
 
     # Every field is one aggregate over the outlook window: precip a window sum (mm),
     # temperatures a window mean. Stamp the window so plot / chc-plot-theme can size palettes.

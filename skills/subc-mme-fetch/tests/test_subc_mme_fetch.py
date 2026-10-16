@@ -186,6 +186,33 @@ def test_bbox_keeps_cells_overlapping_the_edge(mod, monkeypatch, tmp_path):
     assert list(ds["latitude"].values) == [0.0]
 
 
+def test_bbox_drops_cells_that_only_touch_the_edge(mod, monkeypatch, tmp_path):
+    # The cell centred on 0N spans 15S-15N: it only touches the box's 15N south edge.
+    by_url = {}
+    folder, lead_tag, days = mod.OUTLOOKS["7d"]
+    for kind in ("mean", "anom"):
+        url = mod._url(folder, kind, "pr", lead_tag, date(2025, 12, 1))
+        by_url[url] = _fake_nc(kind=kind, var="pr", fill=1.0, window_days=days)
+    monkeypatch.setattr(mod, "_open_remote", lambda url: by_url[url])
+
+    out = tmp_path / "bbox.zarr"
+    run_skill(
+        mod.fetch,
+        "--date",
+        "2025-12-01",
+        "--outlook",
+        "7d",
+        "-v",
+        "pr",
+        "--bbox",
+        "25/34/15/42",
+        "-o",
+        str(out),
+    )
+    ds = xr.open_zarr(out, consolidated=True)
+    assert list(ds["latitude"].values) == [30.0]
+
+
 def test_probe_latest_all_vars_intersection(mod, monkeypatch, capsys):
     def fake_list(folder, lead_tag, var):
         if var == "pr":
