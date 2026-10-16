@@ -21,7 +21,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/theme.py --colormap NAME [--window-days N | -
 ```
 
 ### Arguments
-- `--theme` — `kmsa` (KMSA rainfall classes and Kenya-map styling) or `chc` (classic CHC classes): print that theme as JSON. Save it to a `.json` file in your working directory and pass that file to `plot --theme-file` (also `plot-verify`, `plot-mediogram`, `plot-video`). Exactly one of `--theme` and `--colormap` is required.
+- `--theme` — `kmsa` (KMSA rainfall classes and Kenya-map styling) or `chc` (classic CHC classes): print that theme as JSON. Save it to a `.json` file in your working directory and pass that file to the plotting skills' `--theme-file`. Exactly one of `--theme` and `--colormap` is required.
 - `--colormap` — `kmsa`, `chc_precip_daily` / `_week` / `_month` / `_season`, `chc_precip_anom_*` (same windows), or the family `chc_precip` / `chc_precip_anom` with `--window-days` or `--for` to pick the window. Classes are listed under Details.
 - `--window-days` — window length in days; only with a family name: under 2 → `daily`, up to 10 (a week or dekad) → `week`, under 40 → `month`, longer → `season`. stderr names the choice.
 - `--for` — Zarr you will plot, only with a family name; the window comes from its data variables' `aggregation_period`. Exits 2 unless exactly one period is found. `--window-days` wins when both are given.
