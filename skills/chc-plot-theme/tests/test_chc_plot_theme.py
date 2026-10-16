@@ -1,6 +1,7 @@
 """Correctness tests for chc-plot-theme."""
 
 import json
+from pathlib import Path
 
 import pytest
 from conftest import load_skill, run_skill
@@ -36,3 +37,32 @@ def test_theme_colormaps(mod):
     assert kmsa["colors"][-1] == "#ff5500"
     for entry in colormaps.values():
         assert len(entry["colors"]) == len(entry["bounds"]) + 1
+
+
+def test_prints_kmsa_theme_path(mod, capsys):
+    run_skill(mod.chc_plot_theme, "--theme", "kmsa")
+    path = Path(capsys.readouterr().out.strip())
+    assert path == mod.THEMES["kmsa"] and path.is_file()
+
+
+@pytest.mark.parametrize("args", [(), ("--theme", "kmsa", "--colormap", "kmsa")])
+def test_needs_exactly_one_of_theme_or_colormap(mod, capsys, args):
+    with pytest.raises(SystemExit) as exc:
+        run_skill(mod.chc_plot_theme, *args)
+    assert exc.value.code == 2
+    assert "exactly one of --theme or --colormap" in capsys.readouterr().err
+
+
+def test_kmsa_theme_file(mod):
+    theme = json.loads(mod.THEMES["kmsa"].read_text())
+    assert set(theme) <= {"template", "palettes", "defaults", "overlays"}
+    # Rainfall totals only: other field kinds keep the standard colors.
+    assert theme["defaults"] == {"precip": "kmsa"}
+    kmsa = theme["palettes"]["kmsa"]
+    # One color and one legend label per class; > 100 mm is a labelled class.
+    assert len(kmsa["colors"]) == len(kmsa["labels"]) == len(kmsa["bounds"]) - 1
+    assert kmsa["labels"][0] == "< 1" and kmsa["labels"][-1] == "> 100"
+    # Same classes and swatches as the kmsa colormap (whose packed list adds under/over).
+    colormap = mod.COLORMAPS["kmsa"]
+    assert kmsa["bounds"][:-1] == colormap["bounds"]
+    assert kmsa["colors"] == colormap["colors"][1:]
