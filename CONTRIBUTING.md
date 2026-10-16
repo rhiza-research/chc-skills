@@ -39,5 +39,6 @@ publishes a lean plugin payload to `plugin-dist`. Bump kind comes from PR labels
 tools/run_with_local_core.sh skills/subc-mme-fetch/scripts/fetch.py --help
 ```
 
-Core comes from PyPI as `weather-skills-core>=0.1.1` in `pyproject.toml` and every
+Core is pinned to the `dev` branch of
+https://github.com/weather-skills/weather-skills-core in `pyproject.toml` and every
 skill script's PEP 723 header.
