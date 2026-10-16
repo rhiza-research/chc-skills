@@ -21,21 +21,10 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/theme.py --colormap NAME [--window-days N | -
 ```
 
 ### Arguments
-- `--theme` — `kmsa` or `chc`: print that theme as JSON. Save it to a `.json` file in your working directory and pass that file to `plot --theme-file` (also `plot-timeseries`, `plot-verify`). Exactly one of `--theme` and `--colormap` is required.
-- `--colormap` — a name from the table below, or the family `chc_precip` / `chc_precip_anom` with `--window-days` or `--for` to pick the window.
+- `--theme` — `kmsa` (KMSA rainfall classes and Kenya-map styling) or `chc` (classic CHC classes): print that theme as JSON. Save it to a `.json` file in your working directory and pass that file to `plot --theme-file` (also `plot-verify`, `plot-mediogram`, `plot-video`). Exactly one of `--theme` and `--colormap` is required.
+- `--colormap` — `kmsa`, `chc_precip_daily` / `_week` / `_month` / `_season`, `chc_precip_anom_*` (same windows), or the family `chc_precip` / `chc_precip_anom` with `--window-days` or `--for` to pick the window. Classes are listed under Details.
 - `--window-days` — window length in days; only with a family name: under 2 → `daily`, up to 10 (a week or dekad) → `week`, under 40 → `month`, longer → `season`. stderr names the choice.
 - `--for` — Zarr you will plot, only with a family name; the window comes from its data variables' `aggregation_period`. Exits 2 unless exactly one period is found. `--window-days` wins when both are given.
-
-| Theme | Draws |
-|---|---|
-| `kmsa` | Rainfall totals in the KMSA classes < 1, 2 - 10, 11 - 20, 21 - 50, 51 - 70, 71 - 100, > 100 mm (white, pale green, green, light blue, blue, orange, red-orange), one labelled legend box per class; Arial text; black national borders, dark grey county lines. Other fields keep the standard colors. |
-| `chc` | Classic CHC map classes, fixed whatever the period: totals in `ppt_total` (0, 2, 5, 10, 25, 50, 75, 100, 150, 200, 300, 500, 750, 1000, 1500, 2500 mm), anomalies in the full CHC anomaly classes (±10 … ±500 mm), percent of normal in `ppt_poa`, SPI in `spi`. The standard look instead crops the CHC hues to a window picked from `aggregation_period`. Other fields keep the standard colors. |
-
-| Colormap | Classes |
-|---|---|
-| `kmsa` | KMSA rainfall-map classes, edges 1, 10, 20, 50, 70, 100 mm, white under and red-orange over |
-| `chc_precip_daily` / `_week` / `_month` / `_season` | CHC totals, white/beige at the low end through greens and blues, top edge 50 / 200 / 400 / 1000 mm |
-| `chc_precip_anom_daily` / `_week` / `_month` / `_season` | CHC anomalies, brown/red (dry) through white (−10 to +10 mm) to green, blue, purple (wet), ±50 / ±200 / ±300 / ±500 mm |
 
 ### Output
 `--theme`: the theme JSON on stdout. `--colormap`: one JSON object on stdout.
@@ -58,9 +47,22 @@ plot -i totals_kenya.zarr --layer outline:kenya_counties.json --layer outline:ta
            "data": [{"uid": "outline1", "line": {"color": "#4d4d4d", "width": 0.8}},
                     {"uid": "outline2", "line": {"width": 1.6}}]}'
 ```
-Draws dekad totals in KMSA classes, with thin grey county lines and a heavier basin outline. Outline layers are traces `outline1`, `outline2`, … in `--layer` order; style them by that `uid`. An outline turns off the Natural Earth admin-1 lines, so they do not double the county lines. The county and basin GeoJSON come from `resolve-chc-region Kenya --counties-geojson kenya_counties.json` and `resolve-chc-region "Tana basin" --geojson tana.json`.
+Draws dekad totals in KMSA classes, with thin grey county lines and a heavier basin outline; outline layers are `outline1`, `outline2`, … in `--layer` order. The GeoJSON comes from resolve-chc-region.
 
 ## Details
+
+| Theme | Draws |
+|---|---|
+| `kmsa` | Rainfall totals in the KMSA classes < 1, 2 - 10, 11 - 20, 21 - 50, 51 - 70, 71 - 100, > 100 mm (white, pale green, green, light blue, blue, orange, red-orange), one labelled legend box per class; Arial text; black national borders, dark grey county lines. Other fields keep the standard colors. |
+| `chc` | Classic CHC map classes, fixed whatever the period: totals in `ppt_total` (0, 2, 5, 10, 25, 50, 75, 100, 150, 200, 300, 500, 750, 1000, 1500, 2500 mm), anomalies in the full CHC anomaly classes (±10 … ±500 mm), percent of normal in `ppt_poa`, SPI in `spi`. The standard look instead crops the CHC hues to a window picked from `aggregation_period`. Other fields keep the standard colors. |
+
+| Colormap | Classes |
+|---|---|
+| `kmsa` | KMSA rainfall-map classes, edges 1, 10, 20, 50, 70, 100 mm, white under and red-orange over |
+| `chc_precip_daily` / `_week` / `_month` / `_season` | CHC totals, white/beige at the low end through greens and blues, top edge 50 / 200 / 400 / 1000 mm |
+| `chc_precip_anom_daily` / `_week` / `_month` / `_season` | CHC anomalies, brown/red (dry) through white (−10 to +10 mm) to green, blue, purple (wet), ±50 / ±200 / ±300 / ±500 mm |
+
+The example's GeoJSON: `resolve-chc-region Kenya --counties-geojson kenya_counties.json` and `resolve-chc-region "Tana basin" --geojson tana.json`. An outline layer turns off the Natural Earth admin-1 lines, so they do not double the county lines.
 
 For a CHC window picked from the data:
 ```bash

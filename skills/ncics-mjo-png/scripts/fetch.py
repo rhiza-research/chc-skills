@@ -4,7 +4,7 @@
 #   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@dev",
 # ]
 # ///
-"""Fetch an NCICS tropical-monitoring MJO / equatorial-wave PNG (live or archive)."""
+"""Download an NCICS MJO or equatorial-wave map or Hovmöller diagram as a PNG."""
 
 from __future__ import annotations
 
@@ -417,16 +417,14 @@ def fetch(
     probe_latest,
     **kwargs,
 ):
-    """Fetch an NCICS MJO / equatorial-wave map or Hovmöller PNG.
-
-    Without ``--date``, downloads the live figure from the static NCICS URLs
-    (https://ncics.org/mjo; filenames updated in place daily). With ``--date``,
-    reads the snapshot archive
-    (``/pub/mjo/archive/YYYY/YYYY-MM-DD/v2/``), snapping to the latest
-    published date on or before the request. Default is the Africa 7-day OLR
-    CFS map. Pass ``--product hovmoller`` for the longitude-time diagram
-    (default tropics 15S–15N). No Zarr input.
-    """
+    """Download an NCICS MJO or equatorial-wave map or Hovmöller diagram as a PNG."""
+    # Without ``--date``, downloads the live figure from the static NCICS URLs
+    # (https://ncics.org/mjo; filenames updated in place daily). With ``--date``,
+    # reads the snapshot archive
+    # (``/pub/mjo/archive/YYYY/YYYY-MM-DD/v2/``), snapping to the latest
+    # published date on or before the request. Default is the Africa 7-day OLR
+    # CFS map. Pass ``--product hovmoller`` for the longitude-time diagram
+    # (default tropics 15S–15N). No Zarr input.
     if probe_latest is not None:
         if probe_latest:
             raise UsageError(

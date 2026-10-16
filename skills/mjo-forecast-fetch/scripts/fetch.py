@@ -4,7 +4,7 @@
 #   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@dev",
 # ]
 # ///
-"""Fetch the latest CPC CLIVAR MJO Wheeler–Hendon phase-space forecast PNG."""
+"""Download the latest CPC CLIVAR MJO phase-space forecast diagram for one model as a PNG."""
 
 from __future__ import annotations
 
@@ -116,12 +116,10 @@ def _download(url: str, dest: Path) -> None:
     ),
 )
 def fetch(model, bias_corrected, output, **kwargs):
-    """Fetch the latest CPC CLIVAR MJO phase-space forecast PNG for one model.
-
-    Downloads a pre-rendered Wheeler–Hendon diagram from the static CPC image
-    URLs (latest forecast only; filenames are overwritten upstream daily / 2×
-    weekly). Writes the PNG to ``--output``. No Zarr input.
-    """
+    """Download the latest CPC CLIVAR MJO phase-space forecast diagram for one model as a PNG."""
+    # Downloads a pre-rendered Wheeler–Hendon diagram from the static CPC image
+    # URLs (latest forecast only; filenames are overwritten upstream daily / 2×
+    # weekly). Writes the PNG to ``--output``. No Zarr input.
     url = _image_url(model, bool(bias_corrected))
     variants = MODELS[model]
     if bias_corrected and "bc" not in variants and "raw" in variants:

@@ -7,7 +7,7 @@
 #   "xarray",
 # ]
 # ///
-"""Fetch BoM IOD / ENSO observation or ACCESS-S forecast figures or index values."""
+"""Download Bureau of Meteorology IOD and ENSO graphs, index values, or ACCESS-S outlooks."""
 
 from __future__ import annotations
 
@@ -503,14 +503,12 @@ def _resolve_output_format(output_format: str | None, output) -> str:
     ),
 )
 def fetch(index, product, date, output, output_format, probe_latest, **kwargs):
-    """Fetch a BoM IOD or ENSO observation or ACCESS-S forecast PNG or Zarr.
-
-    Observation products are the current overwritten clim_data timeseries
-    (https://www.bom.gov.au/climate/enso/). Forecasts are ACCESS-S plumes
-    and monthly mean / category-frequency tables from
-    https://www.bom.gov.au/climate/ocean/outlooks/ (dated archive;
-    omit ``--date`` for the latest issue).
-    """
+    """Download Bureau of Meteorology IOD and ENSO graphs, index values, or ACCESS-S outlooks."""
+    # Observation products are the current overwritten clim_data timeseries
+    # (https://www.bom.gov.au/climate/enso/). Forecasts are ACCESS-S plumes
+    # and monthly mean / category-frequency tables from
+    # https://www.bom.gov.au/climate/ocean/outlooks/ (dated archive;
+    # omit ``--date`` for the latest issue).
     if product not in PRODUCT_CHOICES:
         raise UsageError(
             f"unknown --product {product!r}; choose one of: {', '.join(PRODUCT_CHOICES)}"

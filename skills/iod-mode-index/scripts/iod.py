@@ -5,7 +5,7 @@
 #   "xarray",
 # ]
 # ///
-"""Compute the Indian Ocean Dipole Mode Index from a temperature-anomaly field."""
+"""Compute the Indian Ocean Dipole Mode Index from a gridded temperature-anomaly Zarr."""
 
 from __future__ import annotations
 
@@ -41,7 +41,7 @@ def _box_mean(da: xr.DataArray, ds: xr.Dataset, bbox, lat_dim: str, lon_dim: str
     help="Pre-computed temperature anomaly variable (e.g. ts_anomaly, sst_anomaly).",
 )
 def iod(ds, variable, **kwargs):
-    """West − East Dipole Mode Index plus the two box-mean anomalies."""
+    """Compute the Indian Ocean Dipole Mode Index from a gridded temperature-anomaly Zarr."""
     if variable not in ds.data_vars:
         raise UsageError(
             f"variable {variable!r} not in input; available: {', '.join(ds.data_vars)}"
