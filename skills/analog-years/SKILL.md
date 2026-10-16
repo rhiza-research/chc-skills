@@ -1,6 +1,6 @@
 ---
 name: analog-years
-description: Return historically similar analog years for a given --date (YYYY-MM-DD). Use when a task needs ENSO / El Niño analog years, analog-year composites, or "years like this one". Stub: 2026 returns 1982 1994 1997 2006 2015 2019 2023; any other year is an error.
+description: "Print the historical analog years for a date: past years whose large-scale climate state (El Niño / ENSO) resembles the target year. Use when a task needs analog years, \"years like this one\", or the list of years to build an analog-year composite of a season."
 license: MIT
 compatibility: Requires Python 3.12 and uv.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/analog_years.py *)
@@ -11,57 +11,29 @@ metadata:
 
 # analog-years
 
-Look up **analog years** for a calendar date: past years whose large-scale
-climate state (typically ENSO / El Niño) resembles the target year. Seasonal
-outlooks use those years as a composite — fetch or plot the same season in
-each analog year to see what happened last time conditions looked like this.
-
-Prints the years to stdout so they can be spliced into later fetches.
-
-This is a **stub**. Only dates in **2026** are implemented; other years exit 2.
-The 2026 set is a fixed El Niño analog list (1982, 1994, 1997, 2006, 2015, 2019,
-2023). A later version will compute analogs from data instead of a table.
-
-## When to use
-
-- The user asks for analog years, years like this one, ENSO / El Niño analogs,
-  or a composite over historically similar years.
-- A pipeline needs to fetch or plot the same window in several past years
-  that match the current year's climate state.
-
-Relative phrases ("this year", "today") go through `resolve-time` first;
-this skill takes an absolute `--date`.
+Prints the analog years for the year of `--date`, ready to loop over in later fetches.
 
 ## Usage
 
-```
-uv run ${CLAUDE_SKILL_DIR}/scripts/analog_years.py --date YYYY-MM-DD \
-    [--emit years|json]
-```
-
 ```bash
-YEARS=$(uv run ${CLAUDE_SKILL_DIR}/scripts/analog_years.py --date 2026-09-01)
-# YEARS is "1982 1994 1997 2006 2015 2019 2023"
-for y in $YEARS; do
-    echo "$y"
-done
+uv run ${CLAUDE_SKILL_DIR}/scripts/analog_years.py --date YYYY-MM-DD [--emit years|json]
 ```
 
 ### Arguments
-
-- `--date` — absolute ISO date `YYYY-MM-DD`. The **year** of this date is
-  what is looked up; month and day are ignored in the stub.
-- `--emit` — `years` (default; space-separated on stdout) or `json`.
+- `--date` — absolute date `YYYY-MM-DD`. Only its year is used.
+- `--emit` — stdout format: `years` (space-separated) or `json`. Default: `years`.
 
 ### Output
+- `years`: `1982 1994 1997 2006 2015 2019 2023`
+- `json`: `{"date": "2026-09-01", "year": 2026, "years": [1982, 1994, 1997, 2006, 2015, 2019, 2023]}`
+- stderr: `year=2026`.
 
-- stdout (`years`): `1982 1994 1997 2006 2015 2019 2023`
-- stdout (`json`): `{"date":"2026-09-01","year":2026,"years":[1982,1994,1997,2006,2015,2019,2023]}`
-- stderr: `year=2026`
-- Unknown years (not 2026) exit 2 with an explanation.
+### Notes
+- The years come from a fixed table. Only 2026 is in it (an El Niño analog set); any other year exits 2.
+- Resolve relative dates ("this year") to an absolute date first.
 
-## Implemented years
-
-| Input year | Analog years |
-|---|---|
-| 2026 | 1982, 1994, 1997, 2006, 2015, 2019, 2023 |
+### Example
+```bash
+for y in $(uv run ${CLAUDE_SKILL_DIR}/scripts/analog_years.py --date 2026-09-01); do echo "$y"; done
+```
+Loops over the seven 2026 analog years, e.g. to fetch the same season in each.

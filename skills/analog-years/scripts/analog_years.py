@@ -41,7 +41,7 @@ def analogs_for(year):
     default="years",
     help="stdout format: space-separated years (default) or JSON",
 )
-def analog_years(date, emit="years", **kwargs):
+def analog_years(date, emit, **kwargs):
     """Return analog years for a given --date (stub: 2026 only)."""
     years = analogs_for(date.year)
     print(f"year={date.year}", file=sys.stderr)

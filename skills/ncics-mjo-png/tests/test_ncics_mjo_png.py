@@ -241,6 +241,13 @@ def test_probe_latest(mod, monkeypatch, capsys):
     assert capsys.readouterr().out.strip() == "2026-09-01"
 
 
+def test_probe_latest_rejects_a_value(mod, capsys):
+    with pytest.raises(SystemExit) as exc:
+        run_skill(mod.fetch, "--probe-latest", "olr")
+    assert exc.value.code == 2
+    assert "takes no value" in capsys.readouterr().err
+
+
 def test_catalog_tokens_match_ncics_archive(mod):
     assert set(mod.PRODUCTS) == {"map", "hovmoller"}
     assert set(mod.ALGORITHMS) == {"cfs", "orig", "notc", "sst"}

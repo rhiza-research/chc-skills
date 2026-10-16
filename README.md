@@ -11,15 +11,15 @@ Hovmöllers, and Africa ITF position figures. Built on
 
 | Skill | Role |
 | --- | --- |
-| [`subc-mme-fetch`](skills/subc-mme-fetch/) | Fetch and stitch SubC global MME mean + anomaly NetCDFs (7/15/30-day leads) into one forecast Zarr |
+| [`subc-mme-fetch`](skills/subc-mme-fetch/) | Fetch one SubC global MME outlook (`--outlook 7d\|15d\|30d`; mean + anomaly per variable) as a forecast Zarr. `--probe-latest VAR` gives the latest init and warns when its window has already ended |
 | [`iod-mode-index`](skills/iod-mode-index/) | Dipole Mode Index (West − East) plus west/east box means from a pre-computed temperature anomaly |
 | [`iod-enso-fetch`](skills/iod-enso-fetch/) | Fetch BoM IOD / ENSO observation or ACCESS-S forecast PNGs, or official index values as a Zarr (`--format data` / `-o *.zarr`) |
 | [`analog-years`](skills/analog-years/) | Analog years for a `--date` (stub: 2026 → 1982, 1994, 1997, 2006, 2015, 2019, 2023; other years error) |
-| [`mjo-forecast-fetch`](skills/mjo-forecast-fetch/) | Fetch the latest CPC CLIVAR MJO Wheeler–Hendon phase-space PNG (GEFS / ECMWF / ECMWF extended-range) |
+| [`mjo-forecast-fetch`](skills/mjo-forecast-fetch/) | Fetch the latest CPC CLIVAR MJO Wheeler–Hendon phase-space PNG (GEFS, CFS, CMC, JMA, ECMWF 15-day, ECMWF 46-day extended range, BoM) |
 | [`ncics-mjo-png`](skills/ncics-mjo-png/) | Fetch an NCICS MJO / equatorial-wave map or Hovmöller PNG (default live Africa 7-day OLR map; `--date` for archive snapshots; `--product hovmoller` for tropics 15S–15N) |
-| [`africa-itf`](skills/africa-itf/) | Fetch the latest NOAA/CPC Africa ITF / ITCZ position PNG for one region (`--location africa\|west-africa\|east-africa`; CPC uses both terms) |
-| [`resolve-kenya-regions`](skills/resolve-kenya-regions/) | Bbox and boundary polygon for the Tana River basin and Kenya's KNSDI national outline (plus county lines), in the same shape as `resolve-region` |
-| [`chc-plot-theme`](skills/chc-plot-theme/) | KMSA plot theme (`--theme kmsa`, a file for `plot --theme-file`) and CHC/KMSA rainfall colormaps (`chc_precip_<window>`, `chc_precip_anom_<window>`, `kmsa`), printed as JSON for a trace's `meta.palette` |
+| [`africa-itf`](skills/africa-itf/) | Fetch the latest NOAA/CPC Africa ITF / ITCZ figure: the continental position map (`--location africa`, default) or the west/east latitude-vs-dekad time series (`west-africa`, `east-africa`, not maps; CPC uses both terms) |
+| [`resolve-chc-region`](skills/resolve-chc-region/) | Bbox and boundary polygon for the Tana River basin, Kenya's KNSDI national outline (plus county lines), the Kenya OND briefing box, and East Africa clipped at 15°S, in the same shape as `resolve-region` |
+| [`chc-plot-theme`](skills/chc-plot-theme/) | KMSA plot theme (`--theme kmsa`, a file for `plot --theme-file`) and CHC/KMSA rainfall colormaps (`chc_precip_<window>`, `chc_precip_anom_<window>`, `kmsa`; `--for ZARR` picks the window), printed as JSON for a trace's `meta.palette`, plus the KMSA-style Kenya map recipe |
 
 ## Quick start
 
@@ -27,9 +27,10 @@ Hovmöllers, and Africa ITF position figures. Built on
 uv sync --group dev
 uv run pytest
 
-# Latest published 7-day SubC init, then fetch it
+# Latest published 7-day SubC init for one variable (stderr warns if its window
+# has already ended), then fetch that variable
 INIT=$(uv run skills/subc-mme-fetch/scripts/fetch.py --outlook 7d --probe-latest ts)
-uv run skills/subc-mme-fetch/scripts/fetch.py --date "$INIT" --outlook 7d -o /tmp/subc.zarr
+uv run skills/subc-mme-fetch/scripts/fetch.py --date "$INIT" --outlook 7d -v ts -o /tmp/subc.zarr
 
 # IOD from a temperature-anomaly field (forecast or observations)
 uv run skills/iod-mode-index/scripts/iod.py \
@@ -54,15 +55,18 @@ uv run skills/ncics-mjo-png/scripts/fetch.py -o /tmp/olr_africa.png
 uv run skills/ncics-mjo-png/scripts/fetch.py --product hovmoller -o /tmp/olr_hov.png
 uv run skills/ncics-mjo-png/scripts/fetch.py --date 2024-12-30 -o /tmp/olr_africa_20241230.png
 
-# Latest CPC Africa ITF position map (default --location africa)
+# Latest CPC Africa ITF position map (default --location africa; the only map)
 uv run skills/africa-itf/scripts/fetch.py -o /tmp/itf_africa.png
 
 # Tana River basin bbox + polygon (for clip-region --geojson / plot masks)
-uv run skills/resolve-kenya-regions/scripts/resolve.py "Tana River basin" --geojson /tmp/tana.json
+uv run skills/resolve-chc-region/scripts/resolve.py "Tana River basin" --geojson /tmp/tana.json
+
+# CHC rainfall colormap sized to a totals Zarr's aggregation_period
+uv run skills/chc-plot-theme/scripts/theme.py --colormap chc_precip --for /tmp/totals.zarr
 ```
 
-If anomalies are not already in the input, compute them first (climatology +
-`difference` from forecasting-skills), then run `iod-mode-index`. To **view**
+If anomalies are not already in the input, compute them first (a climatology
+from `clim-fetch` or `summarize-dim`, then `difference`, from weather-skills), then run `iod-mode-index`. To **view**
 SST or precip over the Indian Ocean without computing the index, plot those
 variables over an Indian Ocean bbox and optionally overlay the west/east
 dipole boxes (see `iod-mode-index` SKILL.md).

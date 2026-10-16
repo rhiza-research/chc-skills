@@ -1,4 +1,4 @@
-"""Correctness tests for resolve-kenya-regions."""
+"""Correctness tests for resolve-chc-region."""
 
 import json
 
@@ -12,12 +12,12 @@ _KENYA_BBOX = (5.4141, 33.9098, -4.7053, 41.906)
 
 @pytest.fixture(scope="module")
 def mod():
-    return load_skill("resolve-kenya-regions", "resolve")
+    return load_skill("resolve-chc-region", "resolve")
 
 
 @pytest.fixture
 def resolve(mod):
-    return mod.resolve_kenya_regions
+    return mod.resolve_chc_region
 
 
 def test_tana_basin_prints_bbox(capsys, resolve):
@@ -101,3 +101,45 @@ def test_counties_only_for_kenya(tmp_path, resolve, capsys):
 @pytest.mark.parametrize("alias", ["Kenya", "KEN", "Kenya KNSDI", "Kenya counties"])
 def test_kenya_aliases(mod, alias):
     assert mod.load(alias)[0] == "kenya"
+
+
+@pytest.mark.parametrize(
+    "alias",
+    [
+        "Kenya OND region",
+        "Kenya OND",
+        "OND Kenya",
+        "Kenya OND box",
+        "Kenya OND briefing box",
+        "Central-Eastern Kenya",
+        "Central and Eastern Kenya",
+        "CE Kenya",
+    ],
+)
+def test_kenya_ond_aliases_print_box(capsys, resolve, alias):
+    run_skill(resolve, alias)
+    assert capsys.readouterr().out.strip() == "5.0/36.5/-5.0/42.0"
+
+
+def test_kenya_ond_geojson_is_custom_box(tmp_path, capsys, resolve):
+    path = tmp_path / "ond.json"
+    run_skill(resolve, "Kenya OND region", "--geojson", str(path))
+    (feature,) = json.loads(path.read_text())["features"]
+    props = feature["properties"]
+    assert props["name"] == "Kenya OND region"
+    assert props["level"] == "custom"
+    assert props["iso3"] == "KEN"
+    assert props["bbox"] == [5.0, 36.5, -5.0, 42.0]
+    assert feature["geometry"]["type"] == "Polygon"
+
+
+def test_east_africa_stops_at_15s(tmp_path, capsys, resolve):
+    path = tmp_path / "east_africa.json"
+    run_skill(resolve, "East Africa", "--geojson", str(path))
+    n, w, s, e = (float(v) for v in capsys.readouterr().out.strip().split("/"))
+    assert s == pytest.approx(-15.0)
+    assert n > 10 and w < 34 and e > 50
+    (feature,) = json.loads(path.read_text())["features"]
+    assert feature["properties"]["name"] == "East Africa"
+    assert feature["properties"]["level"] == "region"
+    assert feature["geometry"]["type"] == "MultiPolygon"

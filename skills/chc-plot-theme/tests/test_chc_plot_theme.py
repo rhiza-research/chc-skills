@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 import pytest
-from conftest import load_skill, run_skill
+from conftest import load_skill, make_gridded, run_skill, write_zarr
 
 
 @pytest.fixture(scope="module")
@@ -37,6 +37,53 @@ def test_theme_colormaps(mod):
     assert kmsa["colors"][-1] == "#ff5500"
     for entry in colormaps.values():
         assert len(entry["colors"]) == len(entry["bounds"]) + 1
+
+
+@pytest.mark.parametrize(
+    ("days", "expected"),
+    [
+        (1, "chc_precip_daily"),
+        (7, "chc_precip_week"),
+        (10, "chc_precip_week"),
+        (15, "chc_precip_month"),
+        (30.4375, "chc_precip_month"),
+        (92, "chc_precip_season"),
+    ],
+)
+def test_window_days_picks_window(mod, capsys, days, expected):
+    # A 10-day dekad stays on the week window, not the 0-400 mm month window.
+    run_skill(mod.chc_plot_theme, "--colormap", "chc_precip", "--window-days", str(days))
+    assert json.loads(capsys.readouterr().out)["name"] == expected
+
+
+def test_for_reads_aggregation_period(mod, capsys, tmp_path):
+    ds = make_gridded(n_time=1)
+    ds["precip"].attrs.update(units="mm", aggregation_period="1 dekad")
+    path = write_zarr(ds, tmp_path / "dekad.zarr")
+    run_skill(mod.chc_plot_theme, "--colormap", "chc_precip_anom", "--for", str(path))
+    captured = capsys.readouterr()
+    assert json.loads(captured.out)["name"] == "chc_precip_anom_week"
+    assert "chc_precip_anom_week" in captured.err
+
+
+def test_for_without_aggregation_period_errors(mod, capsys, tmp_path):
+    path = write_zarr(make_gridded(n_time=1), tmp_path / "plain.zarr")
+    with pytest.raises(SystemExit) as exc:
+        run_skill(mod.chc_plot_theme, "--colormap", "chc_precip", "--for", str(path))
+    assert exc.value.code != 0
+    assert "--window-days" in capsys.readouterr().err
+
+
+def test_family_needs_window(mod, capsys):
+    with pytest.raises(SystemExit) as exc:
+        run_skill(mod.chc_plot_theme, "--colormap", "chc_precip")
+    assert exc.value.code != 0
+
+
+def test_window_days_rejected_for_fixed_colormap(mod):
+    with pytest.raises(SystemExit) as exc:
+        run_skill(mod.chc_plot_theme, "--colormap", "kmsa", "--window-days", "7")
+    assert exc.value.code != 0
 
 
 def test_prints_kmsa_theme_path(mod, capsys):
