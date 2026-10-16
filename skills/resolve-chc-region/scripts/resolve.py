@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.12,<3.13"
 # dependencies = [
-#   "weather-skills-core @ git+https://github.com/rhiza-research/weather-skills-core@main",
+#   "weather-skills-core>=0.1.1",
 # ]
 # ///
 """Resolve a bundled CHC region to a lat/lon bounding box and optional boundary GeoJSON."""
