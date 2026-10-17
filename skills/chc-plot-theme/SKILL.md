@@ -46,7 +46,7 @@ plot -i totals_kenya.zarr --layer outline:kenya_counties.json --layer outline:ta
            "data": [{"uid": "outline1", "line": {"color": "#4d4d4d", "width": 0.8}},
                     {"uid": "outline2", "line": {"width": 1.6}}]}'
 ```
-Draws dekad totals in KMSA classes, with thin grey county lines and a heavier basin outline; outline layers are `outline1`, `outline2`, … in `--layer` order. The GeoJSON comes from resolve-chc-region.
+Draws dekad totals in KMSA classes, with thin grey county lines and a heavier basin outline; outline layers are `outline1`, `outline2`, … in `--layer` order. The GeoJSON comes from resolve-chc-region. For county names on the map as on KMSA bulletins, add `resolve-chc-region Kenya --county-labels-spec labels.json` and put your title into that file before passing it as `--spec`.
 
 ## Details
 
