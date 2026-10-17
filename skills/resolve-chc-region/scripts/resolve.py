@@ -82,16 +82,35 @@ def write(path, text, what):
     "--counties-geojson",
     help="Optional path: write one polygon per county (Kenya only), e.g. for plot outline layers",
 )
-def resolve_chc_region(name, geojson, counties_geojson, **kwargs):
+@weather_skill.argument(
+    "--county-labels-spec",
+    help="Optional path: write a plot --spec with one text trace naming each county (Kenya only)",
+)
+def resolve_chc_region(name, geojson, counties_geojson, county_labels_spec, **kwargs):
     """Resolve a bundled CHC region to a lat/lon bounding box and optional boundary GeoJSON."""
     key, fc = load(name)
+    counties = DATA / f"{key}_counties.geojson"
+    if (counties_geojson or county_labels_spec) and not counties.exists():
+        raise UsageError(f"{name!r} has no county boundaries; only Kenya does.")
 
     # Write files before printing, so a failed write never leaves a bbox on stdout.
     if counties_geojson:
-        counties = DATA / f"{key}_counties.geojson"
-        if not counties.exists():
-            raise UsageError(f"{name!r} has no county boundaries; only Kenya does.")
         write(counties_geojson, counties.read_text(), "county boundaries")
+    if county_labels_spec:
+        # Names in capitals at each county's pole of inaccessibility, as on KMSA maps.
+        props = [f["properties"] for f in json.loads(counties.read_text())["features"]]
+        trace = {
+            "uid": "county-labels",
+            "type": "scatter",
+            "mode": "text",
+            "x": [p["label_lon"] for p in props],
+            "y": [p["label_lat"] for p in props],
+            "text": [p["name"].upper() for p in props],
+            "textfont": {"size": 7, "color": "#333333"},
+            "hoverinfo": "skip",
+            "showlegend": False,
+        }
+        write(county_labels_spec, json.dumps({"data": [trace]}), "county labels spec")
     if geojson:
         write(geojson, json.dumps(fc, separators=(",", ":")), "boundary polygon")
 

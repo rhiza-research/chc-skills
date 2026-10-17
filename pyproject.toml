@@ -24,6 +24,7 @@ dev = [
     "weather-skills-core>=0.1.1",
     "fsspec",
     "aiohttp",
+    "shapely",
 ]
 
 [tool.uv.sources]

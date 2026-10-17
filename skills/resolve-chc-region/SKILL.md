@@ -1,6 +1,6 @@
 ---
 name: resolve-chc-region
-description: "Resolve a bundled CHC region to an N/W/S/E bbox and optionally its boundary GeoJSON: the Tana River basin, Kenya's official KNSDI national outline and 47 county boundaries, the Kenya OND briefing box (central and eastern Kenya), and East Africa cut off at 15°S. Use whenever a task names the Tana River basin or catchment, needs Kenya's boundary or county lines on a map, or names the Kenya OND region or a CHC East Africa view."
+description: "Resolve a bundled CHC region to an N/W/S/E bbox and optionally its boundary GeoJSON: the Tana River basin, Kenya's official KNSDI national outline and 47 named county boundaries with a county-name label spec for plot, the Kenya OND briefing box (central and eastern Kenya), and East Africa cut off at 15°S. Use whenever a task names the Tana River basin or catchment, needs Kenya's boundary, county lines, or county name labels on a map, or names the Kenya OND region or a CHC East Africa view."
 license: MIT
 compatibility: Requires Python 3.12 and uv.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/resolve.py *)
@@ -15,7 +15,7 @@ Prints a region's bbox and writes its polygon, in the same form as weather-skill
 ## Usage
 
 ```bash
-uv run ${CLAUDE_SKILL_DIR}/scripts/resolve.py NAME [--geojson PATH] [--counties-geojson PATH]
+uv run ${CLAUDE_SKILL_DIR}/scripts/resolve.py NAME [--geojson PATH] [--counties-geojson PATH] [--county-labels-spec PATH]
 ```
 
 ### Arguments
@@ -28,15 +28,18 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/resolve.py NAME [--geojson PATH] [--counties-
   | `Kenya OND region` (5°S–5°N, 36.5–42°E) | `Kenya OND`, `Kenya OND box`, `Kenya OND briefing box`, `OND Kenya`, `Central-Eastern Kenya`, `Central and Eastern Kenya`, `CE Kenya` | `5.0/36.5/-5.0/42.0` |
   | `East Africa` (south to 15°S) | — | `17.9983/21.9035/-15.0/51.1339` |
 - `--geojson` — write the boundary as a one-feature `FeatureCollection`, for clipping or a plot mask or outline.
-- `--counties-geojson` — Kenya only: write the 47 county polygons as one `FeatureCollection` (properties `county_index`, `source`; no county names), for a plot outline layer.
+- `--counties-geojson` — Kenya only: write the 47 county polygons as one `FeatureCollection` (properties `county_index`, `name`, `label_lon`, `label_lat`, `source`, `name_source`), for a plot outline layer.
+- `--county-labels-spec` — Kenya only: write a `plot --spec` file holding one text trace (`uid` `county-labels`) with each county name in capitals at `label_lon`/`label_lat`, as on KMSA maps.
 
 ### Output
 - stdout: `N/W/S/E` in decimal degrees.
-- stderr: `Wrote boundary polygon: PATH` / `Wrote county boundaries: PATH`.
+- stderr: `Wrote boundary polygon: PATH` / `Wrote county boundaries: PATH` / `Wrote county labels spec: PATH`.
+- County `name` is the official county name (`Tharaka-Nithi`, `Elgeyo-Marakwet`, `Murang'a`), taken from geoBoundaries ADM1 by largest area overlap. `label_lon`/`label_lat` is a point inside the county's largest polygon, away from its edges.
 - `--geojson`: a Polygon (Kenya and East Africa: MultiPolygon) with properties `iso3`, `name`, `region_name`, `level` (`basin`, `country`, `custom`, or `region`), `country`, `source`, `bbox`, and `area_km2` for the basin and Kenya.
 
 ### Notes
 - Bare `Tana River` exits 2: it could be the basin or Tana River County. For the county, use `resolve-region kenya-tana_river`; ask the user when unclear.
+- The labels spec is a whole `--spec`. To add a title or other changes, put them in the same file (its `data` list keeps the `county-labels` trace), or merge: `jq -s '.[0] * .[1] | .data = (.[0].data + .[1].data)' labels.json mine.json`.
 - Other names exit 2. Countries, single counties, multi-country regions, and landmarks go to `resolve-region`. Do not send a basin name there: it has no basins and its Nominatim fallback returns an unrelated one.
 - The Tana outline (~126,000 km²) is larger than HydroBASINS (~95,250 km²), so basin totals differ from other basin products; say which outline you used.
 - This `East Africa` stops at 15°S; `resolve-region "Eastern Africa"` is the full UN grouping down to Madagascar and Zimbabwe.

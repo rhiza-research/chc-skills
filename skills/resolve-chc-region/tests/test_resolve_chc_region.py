@@ -4,6 +4,7 @@ import json
 
 import pytest
 from conftest import load_skill, run_skill
+from shapely.geometry import Point, shape
 from weather_skills_core import UsageError
 
 _TANA_BBOX = (0.48, 36.5972, -3.0402, 41.5605)
@@ -89,11 +90,37 @@ def test_kenya_counties_geojson(tmp_path, capsys, resolve):
     assert "Wrote county boundaries" in capsys.readouterr().err
     fc = json.loads(path.read_text())
     assert len(fc["features"]) == 47
+    names = {f["properties"]["name"] for f in fc["features"]}
+    assert len(names) == 47
+    assert {"Nairobi", "Tharaka-Nithi", "Murang'a", "Elgeyo-Marakwet"} <= names
 
 
-def test_counties_only_for_kenya(tmp_path, resolve, capsys):
+def test_county_label_points_lie_inside_their_county(tmp_path, capsys, resolve):
+    path = tmp_path / "counties.json"
+    run_skill(resolve, "KEN", "--counties-geojson", str(path))
+    for feature in json.loads(path.read_text())["features"]:
+        props = feature["properties"]
+        point = Point(props["label_lon"], props["label_lat"])
+        assert shape(feature["geometry"]).contains(point), props["name"]
+
+
+def test_county_labels_spec(tmp_path, capsys, resolve):
+    path = tmp_path / "labels.json"
+    run_skill(resolve, "Kenya", "--county-labels-spec", str(path))
+    assert "Wrote county labels spec" in capsys.readouterr().err
+    (trace,) = json.loads(path.read_text())["data"]
+    assert trace["uid"] == "county-labels"
+    assert trace["mode"] == "text"
+    assert len(trace["x"]) == len(trace["y"]) == len(trace["text"]) == 47
+    assert "NAIROBI" in trace["text"]
+    assert all(33.9 < x < 42.0 for x in trace["x"])
+    assert all(-4.8 < y < 5.5 for y in trace["y"])
+
+
+@pytest.mark.parametrize("flag", ["--counties-geojson", "--county-labels-spec"])
+def test_counties_only_for_kenya(tmp_path, resolve, capsys, flag):
     with pytest.raises(SystemExit) as exc:
-        run_skill(resolve, "Tana basin", "--counties-geojson", str(tmp_path / "c.json"))
+        run_skill(resolve, "Tana basin", flag, str(tmp_path / "c.json"))
     assert exc.value.code == 2
     assert "only Kenya" in capsys.readouterr().err
 
