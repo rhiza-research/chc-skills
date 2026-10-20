@@ -19,7 +19,7 @@ Hovmöllers, and Africa ITF position figures. Built on
 | [`mjo-forecast-fetch`](skills/mjo-forecast-fetch/) | Fetch the latest CPC CLIVAR MJO Wheeler–Hendon phase-space PNG (GEFS, CFS, CMC, JMA, ECMWF 15-day, ECMWF 46-day extended range, BoM) |
 | [`ncics-mjo-png`](skills/ncics-mjo-png/) | Fetch an NCICS MJO / equatorial-wave map or Hovmöller PNG (default live Africa 7-day OLR map; `--date` for archive snapshots; `--product hovmoller` for tropics 15S–15N) |
 | [`africa-itf`](skills/africa-itf/) | Fetch the latest NOAA/CPC Africa ITF / ITCZ figure: the continental position map (`--location africa`, default) or the west/east latitude-vs-dekad time series (`west-africa`, `east-africa`, not maps; CPC uses both terms) |
-| [`resolve-chc-region`](skills/resolve-chc-region/) | Bbox and boundary polygon for the Tana River basin, Kenya's KNSDI national outline (plus county lines), the Kenya OND briefing box, and East Africa clipped at 15°S, in the same shape as `resolve-region` |
+| [`resolve-chc-region`](skills/resolve-chc-region/) | Bbox and boundary polygon for the Tana River basin, Kenya's KNSDI national outline (plus county lines), the Kenya OND briefing box, East Africa clipped at 15°S, and the Indian Ocean basin box, in the same shape as `resolve-region` |
 | [`chc-plot-theme`](skills/chc-plot-theme/) | KMSA and classic CHC plot themes (`--theme kmsa` or `chc`, JSON to save for `plot --theme-file`) and CHC/KMSA rainfall colormaps (`chc_precip_<window>`, `chc_precip_anom_<window>`, `kmsa`; `--for ZARR` picks the window), printed as JSON for a trace's `meta.palette`, plus the KMSA-style Kenya map recipe |
 
 ## Quick start
@@ -69,7 +69,7 @@ uv run skills/chc-plot-theme/scripts/theme.py --colormap chc_precip --for /tmp/t
 If anomalies are not already in the input, compute them first (a climatology
 from `clim-fetch` or `summarize-dim`, then `difference`, from weather-skills), then run `iod-mode-index`. To **view**
 SST or precip over the Indian Ocean without computing the index, plot those
-variables over an Indian Ocean bbox and optionally overlay the west/east
+variables over the `resolve-chc-region "Indian Ocean basin"` bbox and optionally overlay the west/east
 dipole boxes (see `iod-mode-index` SKILL.md).
 
 ## Install as a Claude plugin

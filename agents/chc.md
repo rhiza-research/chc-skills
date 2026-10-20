@@ -36,8 +36,8 @@ weather-skills transforms and plotters when those are available (for example
   = the outlook length. `--bbox` keeps every 1° cell that overlaps the box.
 - **`iod-mode-index`** needs a **pre-computed** temperature anomaly field. If
   anomalies are missing, compute them (climatology + `difference`) first. For
-  maps of SST or precip over the Indian Ocean, prefer plotting with an Indian
-  Ocean bbox and optional west/east dipole boxes rather than forcing the index
+  maps of SST or precip over the Indian Ocean, prefer plotting over the
+  `resolve-chc-region "Indian Ocean basin"` bbox and optional west/east dipole boxes rather than forcing the index
   skill. For the official BoM IOD / ENSO **observation graphs**, use
   `iod-enso-fetch` instead.
 - **`iod-enso-fetch`** downloads a BoM IOD or ENSO product
@@ -89,7 +89,8 @@ weather-skills transforms and plotters when those are available (for example
   (a supplied ~126,000 km² outline, larger than HydroBASINS, so basin
   totals differ from other basin products), **Kenya**'s official KNSDI
   national outline, the **Kenya OND region** briefing box (also "Kenya OND
-  briefing box"), and **East Africa** clipped at 15°S.
+  briefing box"), **East Africa** clipped at 15°S, and the **Indian Ocean
+  basin** box (40°S–30°N, 20–120°E).
   `--counties-geojson` (Kenya) writes the 47 KNSDI county polygons for
   `plot --layer outline:` county lines. Fetch over the bbox, then mask with
   `clip-region --geojson`. Use it instead of `resolve-region` for the Tana

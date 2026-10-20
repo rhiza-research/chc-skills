@@ -33,6 +33,12 @@ REGIONS = {
         "central_and_eastern_kenya",
         "ce_kenya",
     ),
+    "indian_ocean_basin": (
+        "indian_ocean_basin",
+        "indian_ocean",
+        "indian_ocean_basin_region",
+        "iob",
+    ),
     "tana_river_basin": (
         "tana_river_basin",
         "tana_basin",
@@ -54,8 +60,9 @@ def load(name):
     if cleaned not in ALIASES:
         raise UsageError(
             f"{name!r} is not bundled with resolve-chc-region (known: 'Kenya', "
-            "'Tana River basin', 'Kenya OND region', 'East Africa'). For single counties (e.g. kenya-nairobi), "
-            "other countries, and landmarks use the resolve-region skill."
+            "'Tana River basin', 'Kenya OND region', 'East Africa', 'Indian Ocean basin'). "
+            "For single counties (e.g. kenya-nairobi), other countries, and landmarks "
+            "use the resolve-region skill."
         )
     key = ALIASES[cleaned]
     fc = json.loads((DATA / f"{key}.geojson").read_text())
@@ -75,7 +82,10 @@ def write(path, text, what):
 @weather_skill(name="resolve-chc-region", version=_SKILL_VERSION, output=False)
 @weather_skill.argument(
     "name",
-    help="Region name or alias (e.g. 'Kenya', 'Tana River basin', 'Kenya OND region', 'East Africa')",
+    help=(
+        "Region name or alias (e.g. 'Kenya', 'Tana River basin', 'Kenya OND region', "
+        "'East Africa', 'Indian Ocean basin')"
+    ),
 )
 @weather_skill.argument("--geojson", help="Optional path: write the boundary polygon as GeoJSON")
 @weather_skill.argument(

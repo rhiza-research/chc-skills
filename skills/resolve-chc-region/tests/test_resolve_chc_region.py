@@ -143,3 +143,23 @@ def test_east_africa_stops_at_15s(tmp_path, capsys, resolve):
     assert feature["properties"]["name"] == "East Africa"
     assert feature["properties"]["level"] == "region"
     assert feature["geometry"]["type"] == "MultiPolygon"
+
+
+@pytest.mark.parametrize(
+    "alias", ["Indian Ocean basin", "Indian Ocean", "Indian Ocean basin region", "IOB"]
+)
+def test_indian_ocean_basin_aliases_print_box(capsys, resolve, alias):
+    run_skill(resolve, alias)
+    assert capsys.readouterr().out.strip() == "30.0/20.0/-40.0/120.0"
+
+
+def test_indian_ocean_basin_geojson_is_custom_box(tmp_path, capsys, resolve):
+    path = tmp_path / "iob.json"
+    run_skill(resolve, "Indian Ocean basin", "--geojson", str(path))
+    (feature,) = json.loads(path.read_text())["features"]
+    props = feature["properties"]
+    assert props["name"] == "Indian Ocean basin"
+    assert props["level"] == "custom"
+    assert props["iso3"] is None
+    assert props["bbox"] == [30.0, 20.0, -40.0, 120.0]
+    assert feature["geometry"]["type"] == "Polygon"

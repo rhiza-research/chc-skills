@@ -1,0 +1,43 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "iso3": null,
+        "name": "Indian Ocean basin",
+        "region_name": "indian_ocean_basin",
+        "level": "custom",
+        "country": null,
+        "source": "Conventional Indian Ocean basin box, 40°S–30°N, 20–120°E (moved from weather-skills-core resolve-region)"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              20.0,
+              -40.0
+            ],
+            [
+              120.0,
+              -40.0
+            ],
+            [
+              120.0,
+              30.0
+            ],
+            [
+              20.0,
+              30.0
+            ],
+            [
+              20.0,
+              -40.0
+            ]
+          ]
+        ]
+      }
+    }
+  ]
+}

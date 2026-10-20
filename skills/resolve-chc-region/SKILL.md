@@ -1,6 +1,6 @@
 ---
 name: resolve-chc-region
-description: "Resolve a bundled CHC region to an N/W/S/E bbox and optionally its boundary GeoJSON: the Tana River basin, Kenya's official KNSDI national outline and 47 county boundaries, the Kenya OND briefing box (central and eastern Kenya), and East Africa cut off at 15°S. Use whenever a task names the Tana River basin or catchment, needs Kenya's boundary or county lines on a map, or names the Kenya OND region or a CHC East Africa view."
+description: "Resolve a bundled CHC region to an N/W/S/E bbox and optionally its boundary GeoJSON: the Tana River basin, Kenya's official KNSDI national outline and 47 county boundaries, the Kenya OND briefing box (central and eastern Kenya), East Africa cut off at 15°S, and the Indian Ocean basin box. Use whenever a task names the Tana River basin or catchment, needs Kenya's boundary or county lines on a map, or names the Kenya OND region, a CHC East Africa view, or the Indian Ocean basin."
 license: MIT
 compatibility: Requires Python 3.12 and uv.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/resolve.py *)
@@ -27,6 +27,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/resolve.py NAME [--geojson PATH] [--counties-
   | `Kenya` (KNSDI) | `KEN`, `Kenya KNSDI`, `Kenya counties` | `5.4141/33.9098/-4.7053/41.906` |
   | `Kenya OND region` (5°S–5°N, 36.5–42°E) | `Kenya OND`, `Kenya OND box`, `Kenya OND briefing box`, `OND Kenya`, `Central-Eastern Kenya`, `Central and Eastern Kenya`, `CE Kenya` | `5.0/36.5/-5.0/42.0` |
   | `East Africa` (south to 15°S) | — | `17.9983/21.9035/-15.0/51.1339` |
+  | `Indian Ocean basin` (40°S–30°N, 20–120°E) | `Indian Ocean`, `Indian Ocean basin region`, `IOB` | `30.0/20.0/-40.0/120.0` |
 - `--geojson` — write the boundary as a one-feature `FeatureCollection`, for clipping or a plot mask or outline.
 - `--counties-geojson` — Kenya only: write the 47 county polygons as one `FeatureCollection` (properties `county_index`, `source`; no county names), for a plot outline layer.
 
@@ -55,3 +56,4 @@ Each region is `data/<key>.geojson`, a one-feature FeatureCollection whose prope
 - **Kenya** (`kenya.geojson`, `kenya_counties.geojson`): from the Kenya National Spatial Data Infrastructure (KNSDI) `Kenya_Counties_KNSDI.shp`, which has no attribute table. Coverage-simplified at 0.001° (~100 m) so neighbouring counties still meet, rounded to 4 decimals. The national outline is the union of the counties without the sliver holes between them. `area_km2` (~591,500) is from the unsimplified source.
 - **Kenya OND region** (`kenya_ond_region.geojson`): the plain rectangle used as the analog and verification box in CHC Kenya OND briefings.
 - **East Africa** (`east_africa.geojson`): the Natural Earth 110m Eastern Africa subregion clipped at 15°S, a Greater Horn view without southern Madagascar, Mozambique, Malawi, Zambia, and Zimbabwe.
+- **Indian Ocean basin** (`indian_ocean_basin.geojson`): the conventional basin rectangle for Indian Ocean SST and rainfall maps.
