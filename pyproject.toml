@@ -24,6 +24,10 @@ dev = [
     "weather-skills-core>=0.1.1",
     "fsspec",
     "aiohttp",
+    "pandas",
+    "scipy",
+    "matplotlib>=3.8",
+    "pillow",
 ]
 
 [tool.uv.sources]

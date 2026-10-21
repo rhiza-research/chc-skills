@@ -3,7 +3,9 @@
 Climate Hazards Center (CHC) skills for SubC multi-model-ensemble forecasts,
 Indian Ocean Dipole (IOD) analysis, analog years, BoM IOD/ENSO observation
 graphs, CPC MJO forecast diagrams, NCICS MJO / equatorial-wave maps and
-Hovmöllers, and Africa ITF position figures. Built on
+Hovmöllers, OLR equatorial-wave filtering and the RMM MJO index computed from
+a forecast (with Hovmöller, phase-rose and phase-diagram plots), and Africa ITF
+position figures. Built on
 [`weather-skills-core`](https://github.com/weather-skills/weather-skills-core)
 (`>=0.1.1` from PyPI).
 
@@ -17,6 +19,11 @@ Hovmöllers, and Africa ITF position figures. Built on
 | [`analog-years`](skills/analog-years/) | Analog years for a `--date` (stub: 2026 → 1982, 1994, 1997, 2006, 2015, 2019, 2023; other years error) |
 | [`mjo-forecast-fetch`](skills/mjo-forecast-fetch/) | Fetch the latest CPC CLIVAR MJO Wheeler–Hendon phase-space PNG (GEFS, CFS, CMC, JMA, ECMWF 15-day, ECMWF 46-day extended range, BoM) |
 | [`ncics-mjo-png`](skills/ncics-mjo-png/) | Fetch an NCICS MJO / equatorial-wave map or Hovmöller PNG (default live Africa 7-day OLR map; `--date` for archive snapshots; `--product hovmoller` for tropics 15S–15N) |
+| [`olr-wave-filter`](skills/olr-wave-filter/) | Filter an ensemble OLR forecast (dynamical-fetch, every longitude) into MJO, Kelvin, ER, MRG/TD and low-frequency waves for every member, with a 90-day ERA5 lead-in from the public `africa-forecasting-data` bucket (Janiga et al. 2018; optional reforecast bias correction) |
+| [`plot-wave-hovmoller`](skills/plot-wave-hovmoller/) | Time-longitude Hovmöller of `olr-wave-filter` output: NCICS-monitor look, wave-amplitude contours, multi-wave contours, or ensemble agreement on wave activity |
+| [`plot-wave-phase`](skills/plot-wave-phase/) | Local wave phase at one longitude (default Kenya, 37.5E): weekly or daily phase roses, phase-amplitude diagram, or amplitude coloured by phase |
+| [`mjo-rmm-index`](skills/mjo-rmm-index/) | Wheeler–Hendon RMM1/RMM2, amplitude and phase for every member, from forecast OLR and u850/u200 with ERA5 EOFs rotated onto BoM's RMM |
+| [`plot-rmm-phase`](skills/plot-rmm-phase/) | RMM phase-space diagram of `mjo-rmm-index` output: members on chosen days, ensemble-mean track, observed and BoM tracks |
 | [`africa-itf`](skills/africa-itf/) | Fetch the latest NOAA/CPC Africa ITF / ITCZ figure: the continental position map (`--location africa`, default) or the west/east latitude-vs-dekad time series (`west-africa`, `east-africa`, not maps; CPC uses both terms) |
 | [`kenya-forecast-fetch`](skills/kenya-forecast-fetch/) | Fetch a published KMSA / Rhiza Kenya forecast grid for one init: native ECMWF S2S precip (~1.5°, 101 members), its ~0.05° weekly and daily downscales, S2S temperatures, humidity and winds, medium-range precip, or GEFS. No credentials |
 | [`resolve-chc-region`](skills/resolve-chc-region/) | Bbox and boundary polygon for the Tana River basin, Kenya's KNSDI national outline (plus county lines), the Kenya OND briefing box, and East Africa clipped at 15°S, in the same shape as `resolve-region` |
@@ -55,6 +62,16 @@ uv run skills/mjo-forecast-fetch/scripts/fetch.py --model gefs -o /tmp/mjo.png
 uv run skills/ncics-mjo-png/scripts/fetch.py -o /tmp/olr_africa.png
 uv run skills/ncics-mjo-png/scripts/fetch.py --product hovmoller -o /tmp/olr_hov.png
 uv run skills/ncics-mjo-png/scripts/fetch.py --date 2024-12-30 -o /tmp/olr_africa_20241230.png
+
+# Equatorial waves and the RMM index from one ECMWF 46-day forecast. Fetch the inputs with
+# forecasting-skills dynamical-fetch (--dataset ecmwf-ifs-ens-forecast-46-day-daily-1-5-degree
+# --date 2026-10-10): OLR (-v net_long_wave_radiation_flux_top_of_atmosphere --bbox 30/-180/-30/180)
+# and zonal wind (-v u --bbox 15/-180/-15/180)
+uv run skills/olr-wave-filter/scripts/olr_wave_filter.py -i /tmp/olr.zarr -o /tmp/waves.zarr
+uv run skills/plot-wave-hovmoller/scripts/plot_wave_hovmoller.py -i /tmp/waves.zarr --style ncics -o /tmp/hov.png
+uv run skills/plot-wave-phase/scripts/plot_wave_phase.py -i /tmp/waves.zarr --wave kelvin --kind rose --label Kenya -o /tmp/rose.png
+uv run skills/mjo-rmm-index/scripts/mjo_rmm_index.py --olr /tmp/olr.zarr --wind /tmp/u.zarr -o /tmp/rmm.zarr
+uv run skills/plot-rmm-phase/scripts/plot_rmm_phase.py -i /tmp/rmm.zarr -o /tmp/rmm.png
 
 # Latest CPC Africa ITF position map (default --location africa; the only map)
 uv run skills/africa-itf/scripts/fetch.py -o /tmp/itf_africa.png

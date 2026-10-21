@@ -109,6 +109,155 @@ def make_point_obs(
     return ds
 
 
+def write_era5_archive(folder, lats, lons, end="2026-02-28", start_year=2006, seed=0):
+    """Synthetic ERA5 archive as in gs://africa-forecasting-data/era5/: per-year
+    era5_olr_<YYYY>.nc (time, latitude, longitude), era5_u_15S15N_<YYYY>.nc (time,
+    longitude) and BoM's rmm.74toRealtime.txt, daily up to ``end``."""
+    folder.mkdir(parents=True, exist_ok=True)
+    rng = np.random.default_rng(seed)
+    end = np.datetime64(end)
+    lats = np.sort(np.asarray(lats, dtype=float))[::-1]
+    lons = np.asarray(lons, dtype=float)
+    for year in range(start_year, int(str(end)[:4]) + 1):
+        last = min(end, np.datetime64(f"{year}-12-31"))
+        times = np.arange(np.datetime64(f"{year}-01-01"), last + np.timedelta64(1, "D"))
+        doy = (times - times.astype("datetime64[Y]")).astype(int)
+        season = np.cos(2 * np.pi * doy / 365.25)[:, None, None]
+        olr = 240 + 15 * season + rng.normal(0, 10, (len(times), len(lats), len(lons)))
+        source = ("time", np.full(len(times), "wb2"))
+        xr.Dataset(
+            {"olr": (("time", "latitude", "longitude"), olr.astype("float32"))},
+            coords={
+                "time": times.astype("datetime64[ns]"),
+                "latitude": lats,
+                "longitude": lons,
+                "source": source,
+            },
+        ).to_netcdf(folder / f"era5_olr_{year}.nc")
+        u = {
+            name: (
+                ("time", "longitude"),
+                (scale * season[:, :, 0] + rng.normal(0, scale, (len(times), len(lons)))).astype(
+                    "float32"
+                ),
+            )
+            for name, scale in (("u850", 2.0), ("u200", 5.0))
+        }
+        xr.Dataset(
+            u, coords={"time": times.astype("datetime64[ns]"), "longitude": lons, "source": source}
+        ).to_netcdf(folder / f"era5_u_15S15N_{year}.nc")
+    days = np.arange(np.datetime64(f"{start_year}-01-01"), end + np.timedelta64(1, "D"))
+    lines = ["RMM values (synthetic)", "year, month, day, RMM1, RMM2, phase, amplitude."]
+    for day, (x, y) in zip(days, rng.normal(0, 1, (len(days), 2)), strict=True):
+        y_, m, d = str(day).split("-")
+        lines.append(f"{y_} {int(m)} {int(d)} {x:.5f} {y:.5f} 1 {np.hypot(x, y):.5f} synthetic")
+    (folder / "rmm.74toRealtime.txt").write_text("\n".join(lines) + "\n")
+    return folder
+
+
+WAVE_LONS = tuple(float(x) for x in range(-180, 180, 30))
+WAVE_KEYS = ("low", "mjo", "kelvin", "er", "mrg_td")
+
+
+def make_wave_dataset(
+    init="2026-03-01",
+    members=3,
+    days_before=20,
+    n_fc=14,
+    lats=(-7.5, 0.0, 7.5),
+    lons=WAVE_LONS,
+    seed=0,
+):
+    """Small Dataset shaped like olr-wave-filter output."""
+    rng = np.random.default_rng(seed)
+    init = np.datetime64(init, "D")
+    times = np.arange(init - days_before, init + n_fc).astype("datetime64[ns]")
+    shape = (members, len(times), len(lats), len(lons))
+    data = {
+        "olr_anomaly": (
+            ("number", "time", "latitude", "longitude"),
+            rng.normal(0, 30, shape).astype("float32"),
+            {"units": "W m-2"},
+        )
+    }
+    for w in WAVE_KEYS:
+        data[f"olr_{w}"] = (
+            ("number", "time", "latitude", "longitude"),
+            rng.normal(0, 20, shape).astype("float32"),
+            {"units": "W m-2", "amplitude_std_a": 8.0, "amplitude_std_b": 4.0},
+        )
+        data[f"olr_{w}_obs_only"] = (
+            ("time", "latitude", "longitude"),
+            rng.normal(0, 10, shape[1:]).astype("float32"),
+            {"units": "W m-2"},
+        )
+        data[f"olr_{w}_local_std_a"] = (
+            ("longitude",),
+            np.full(len(lons), 8.0, "float32"),
+            {"units": "W m-2"},
+        )
+        data[f"olr_{w}_local_std_b"] = (
+            ("longitude",),
+            np.full(len(lons), 4.0, "float32"),
+            {"units": "W m-2 day-1"},
+        )
+        data[f"olr_{w}_clim_amp_p90"] = (
+            ("phase", "longitude"),
+            np.full((8, len(lons)), 2.0, "float32"),
+            {"units": "1"},
+        )
+        data[f"olr_{w}_clim_amp_p99"] = (
+            ("phase", "longitude"),
+            np.full((8, len(lons)), 3.0, "float32"),
+            {"units": "1"},
+        )
+        data[f"olr_{w}_clim_amp_p90_all"] = (
+            ("longitude",),
+            np.full(len(lons), 2.0, "float32"),
+            {"units": "1"},
+        )
+    ds = xr.Dataset(
+        data,
+        coords={
+            "number": np.arange(members),
+            "time": times,
+            "latitude": list(lats),
+            "longitude": [float(x) for x in lons],
+            "phase": np.arange(1, 9),
+            "is_forecast": ("time", times >= init),
+        },
+        attrs={"forecast_reference_time": str(init)},
+    )
+    ds["latitude"].attrs.update(standard_name="latitude", units="degrees_north", axis="Y")
+    ds["longitude"].attrs.update(standard_name="longitude", units="degrees_east", axis="X")
+    ds["time"].attrs.update(standard_name="time", axis="T")
+    return ds
+
+
+def make_rmm_dataset(init="2026-03-01", members=3, obs_days=10, n_fc=21, seed=0):
+    """Small Dataset shaped like mjo-rmm-index output."""
+    rng = np.random.default_rng(seed)
+    init = np.datetime64(init, "D")
+    times = np.arange(init - obs_days, init + n_fc).astype("datetime64[ns]")
+    rmm = rng.normal(0, 1, (len(times), members, 2))
+    is_fc = times >= init
+    bom = np.where(is_fc[:, None], np.nan, rmm.mean(axis=1))
+    ds = xr.Dataset(
+        {
+            "rmm1": (("time", "number"), rmm[..., 0]),
+            "rmm2": (("time", "number"), rmm[..., 1]),
+            "rmm1_mean": ("time", rmm[..., 0].mean(1)),
+            "rmm2_mean": ("time", rmm[..., 1].mean(1)),
+            "rmm1_bom": ("time", bom[:, 0]),
+            "rmm2_bom": ("time", bom[:, 1]),
+        },
+        coords={"time": times, "number": np.arange(members), "is_forecast": ("time", is_fc)},
+        attrs={"forecast_reference_time": str(init), "eof_years": "2006-2022"},
+    )
+    ds["time"].attrs.update(standard_name="time", axis="T")
+    return ds
+
+
 def write_zarr(ds, path):
     """Write a consolidated Zarr store."""
     ds.to_zarr(path, mode="w", consolidated=True)
