@@ -20,7 +20,7 @@ import sys
 import urllib.error
 import urllib.parse
 import urllib.request
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime, timedelta
 
 import numpy as np
@@ -105,10 +105,11 @@ def _candidate_urls(url: str) -> list[str]:
     return urls
 
 
-def _open_remote(url: str) -> xr.Dataset:
-    """Open a SubC NetCDF. GCS mirror first, then CHC origin.
+def _download_remote(url: str) -> str:
+    """Download a SubC NetCDF and return its local path. GCS mirror first, then CHC origin.
 
-    Uses fsspec ``simplecache`` so netCDF4 opens a local materialized copy.
+    Uses fsspec ``simplecache`` so netCDF4 later opens a local materialized copy.
+    Runs in worker threads, so it only fetches bytes and never opens the file.
     """
     import fsspec
 
@@ -118,13 +119,12 @@ def _open_remote(url: str) -> xr.Dataset:
         if i:
             opts["https"] = {"client_kwargs": {"headers": {"User-Agent": _USER_AGENT}}}
         try:
-            path = fsspec.open_local(f"simplecache::{candidate}", **opts)
-            return xr.open_dataset(path, engine="netcdf4")
+            return fsspec.open_local(f"simplecache::{candidate}", **opts)
         except FileNotFoundError as exc:
             last_missing = exc
             continue
         except Exception as exc:
-            raise DataError(f"failed to open {candidate}: {exc}") from exc
+            raise DataError(f"failed to download {candidate}: {exc}") from exc
     raise DataError(f"SubC archive file not found: {url}") from last_missing
 
 
@@ -146,13 +146,6 @@ def _normalize_field(ds: xr.Dataset, *, kind: str, var: str) -> xr.DataArray:
         raise DataError(f"expected data variable {src!r}; got {list(ds.data_vars)}")
     out_name = var if kind == KIND_MEAN else f"{var}_anomaly"
     return ds[src].rename(out_name).load()
-
-
-def _load_one(folder: str, kind: str, var: str, lead_tag: str, init: date):
-    url = _url(folder, kind, var, lead_tag, init)
-    with _open_remote(url) as raw:
-        da = _normalize_field(raw, kind=kind, var=var)
-    return kind, var, da
 
 
 def _list_init_dates(folder: str, lead_tag: str, var: str) -> list[date]:
@@ -293,24 +286,27 @@ def fetch(date, outlook, bbox, variable, workers, probe_latest, **kwargs):
 
     jobs = [(KIND_MEAN, var) for var in vars_wanted] + [(KIND_ANOM, var) for var in vars_wanted]
 
-    results = []
+    # netCDF4/HDF5 is not thread-safe: opening files from several threads at once
+    # can segfault. Workers only download; each file is opened and loaded below on
+    # the main thread, in job order.
+    urls = [_url(folder, kind, var, lead_tag, init) for kind, var in jobs]
     with ThreadPoolExecutor(max_workers=workers) as pool:
-        futures = {
-            pool.submit(_load_one, folder, kind, var, lead_tag, init): (kind, var)
-            for kind, var in jobs
-        }
-        for fut in as_completed(futures):
-            results.append(fut.result())
+        paths = list(pool.map(_download_remote, urls))
 
     # Same forecast shape as the other fetchers: scalar `time` is the init and
     # `step` is the start of the one window it covers (0 days); the window length
     # is the `aggregation_period` stamped below.
     valid = init + timedelta(days=outlook_days)
     data_vars = {}
-    for kind, var, da in results:
+    for (kind, var), url, path in zip(jobs, urls, paths, strict=True):
+        try:
+            raw = xr.open_dataset(path, engine="netcdf4")
+        except Exception as exc:
+            raise DataError(f"failed to open {url}: {exc}") from exc
+        with raw:
+            da = _normalize_field(raw, kind=kind, var=var)
         out_name = var if kind == KIND_MEAN else f"{var}_anomaly"
-        da = da.expand_dims(step=[np.timedelta64(0, "D")])
-        data_vars[out_name] = da
+        data_vars[out_name] = da.expand_dims(step=[np.timedelta64(0, "D")])
 
     ds = xr.Dataset(data_vars)
     ds = ds.assign_coords(time=np.datetime64(init.isoformat(), "ns"))
