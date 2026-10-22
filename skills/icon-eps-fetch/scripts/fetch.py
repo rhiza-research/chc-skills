@@ -54,7 +54,7 @@ from weather_skills_core.units import (
 )
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "0.0.0"
+_SKILL_VERSION = "0.0.1"
 
 _BASE_URL = "https://opendata.dwd.de/weather/nwp/icon-eps/grib"
 _FIELD_FILE = "icon-eps_global_icosahedral_single-level_{init}_{step:03d}_{folder}.grib2.bz2"
