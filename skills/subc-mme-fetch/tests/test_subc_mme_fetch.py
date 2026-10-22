@@ -1,4 +1,4 @@
-"""Tests for subc-mme-fetch (mocked remote opens; no live network)."""
+"""Tests for subc-mme-fetch (mocked downloads of local NetCDF files; no live network)."""
 
 from __future__ import annotations
 
@@ -72,14 +72,16 @@ def test_fetch_one_outlook(mod, monkeypatch, tmp_path):
         for kind in ("mean", "anom"):
             url = mod._url(folder, kind, var, lead_tag, init)
             fill = float(days) + (0.1 if kind == "anom" else 0.0)
-            by_url[url] = _fake_nc(kind=kind, var=var, fill=fill, window_days=days)
+            path = tmp_path / f"{kind}_{var}.nc"
+            _fake_nc(kind=kind, var=var, fill=fill, window_days=days).to_netcdf(path)
+            by_url[url] = str(path)
 
-    def fake_open(url: str):
+    def fake_download(url: str):
         if url not in by_url:
             raise FileNotFoundError(url)
         return by_url[url]
 
-    monkeypatch.setattr(mod, "_open_remote", fake_open)
+    monkeypatch.setattr(mod, "_download_remote", fake_download)
 
     out = tmp_path / "out.zarr"
     run_skill(
@@ -124,10 +126,10 @@ def test_fetch_one_outlook(mod, monkeypatch, tmp_path):
 def test_missing_file_raises(mod, monkeypatch, tmp_path):
     from weather_skills_core import DataError
 
-    def fake_open(url: str):
+    def fake_download(url: str):
         raise DataError(f"SubC archive file not found: {url}")
 
-    monkeypatch.setattr(mod, "_open_remote", fake_open)
+    monkeypatch.setattr(mod, "_download_remote", fake_download)
     with pytest.raises(SystemExit) as excinfo:
         run_skill(
             mod.fetch,
@@ -165,8 +167,10 @@ def test_bbox_keeps_cells_overlapping_the_edge(mod, monkeypatch, tmp_path):
     folder, lead_tag, days = mod.OUTLOOKS["7d"]
     for kind in ("mean", "anom"):
         url = mod._url(folder, kind, "pr", lead_tag, date(2025, 12, 1))
-        by_url[url] = _fake_nc(kind=kind, var="pr", fill=1.0, window_days=days)
-    monkeypatch.setattr(mod, "_open_remote", lambda url: by_url[url])
+        path = tmp_path / f"{kind}_pr.nc"
+        _fake_nc(kind=kind, var="pr", fill=1.0, window_days=days).to_netcdf(path)
+        by_url[url] = str(path)
+    monkeypatch.setattr(mod, "_download_remote", lambda url: by_url[url])
 
     out = tmp_path / "bbox.zarr"
     run_skill(
@@ -193,8 +197,10 @@ def test_bbox_drops_cells_that_only_touch_the_edge(mod, monkeypatch, tmp_path):
     folder, lead_tag, days = mod.OUTLOOKS["7d"]
     for kind in ("mean", "anom"):
         url = mod._url(folder, kind, "pr", lead_tag, date(2025, 12, 1))
-        by_url[url] = _fake_nc(kind=kind, var="pr", fill=1.0, window_days=days)
-    monkeypatch.setattr(mod, "_open_remote", lambda url: by_url[url])
+        path = tmp_path / f"{kind}_pr.nc"
+        _fake_nc(kind=kind, var="pr", fill=1.0, window_days=days).to_netcdf(path)
+        by_url[url] = str(path)
+    monkeypatch.setattr(mod, "_download_remote", lambda url: by_url[url])
 
     out = tmp_path / "bbox.zarr"
     run_skill(
