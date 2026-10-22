@@ -4,7 +4,7 @@
 #   "weather-skills-core @ git+https://github.com/weather-skills/weather-skills-core@dev",
 # ]
 # ///
-"""Print a KMSA or CHC plot theme, or one CHC or KMSA rainfall colormap, as JSON."""
+"""Write a KMSA or CHC plot theme to a JSON file, or print one CHC or KMSA rainfall colormap."""
 
 import json
 import sys
@@ -28,7 +28,12 @@ FAMILIES = ("chc_precip", "chc_precip_anom")
 @weather_skill.argument(
     "--theme",
     choices=list(THEMES),
-    help="Print this plot theme as JSON; save it to a file for plot --theme-file.",
+    help="Write this plot theme to a JSON file (-o) for plot --theme-file.",
+)
+@weather_skill.argument(
+    "-o",
+    "--output",
+    help="Theme JSON file to write, only with --theme (default: THEME_theme.json, e.g. kmsa_theme.json).",
 )
 @weather_skill.argument(
     "--colormap",
@@ -50,15 +55,21 @@ FAMILIES = ("chc_precip", "chc_precip_anom")
     dest="for_ds",
     help="Zarr to plot; the window is read from its aggregation_period attr.",
 )
-def chc_plot_theme(theme=None, colormap=None, window_days=None, for_ds=None, **kwargs):
-    """Print a KMSA or CHC plot theme, or one CHC or KMSA rainfall colormap, as JSON."""
+def chc_plot_theme(
+    theme=None, output=None, colormap=None, window_days=None, for_ds=None, **kwargs
+):
+    """Write a KMSA or CHC plot theme to a JSON file, or print one CHC or KMSA rainfall colormap."""
     if (theme is None) == (colormap is None):
         raise UsageError("pass exactly one of --theme or --colormap")
     if theme is not None:
         if window_days is not None or for_ds is not None:
             raise UsageError("--window-days / --for go with --colormap, not --theme.")
-        sys.stdout.write(THEMES[theme].read_text(encoding="utf-8"))
+        output = Path(output or f"{theme}_theme.json")
+        output.write_text(THEMES[theme].read_text(encoding="utf-8"), encoding="utf-8")
+        print(f"Wrote: {output}", file=sys.stderr)
         return
+    if output is not None:
+        raise UsageError("-o / --output goes with --theme; --colormap prints its JSON.")
 
     if for_ds is not None and window_days is None:
         periods = {
