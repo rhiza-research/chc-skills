@@ -4,8 +4,8 @@ Climate Hazards Center (CHC) skills for SubC multi-model-ensemble forecasts,
 Indian Ocean Dipole (IOD) analysis, analog years, BoM IOD/ENSO observation
 graphs, CPC MJO forecast diagrams, NCICS MJO / equatorial-wave maps and
 Hovmöllers, OLR equatorial-wave filtering and the RMM MJO index computed from
-a forecast (with Hovmöller, phase-rose and phase-diagram plots), and Africa ITF
-position figures. Built on
+a forecast (with Hovmöller, phase-rose and phase-diagram plots), Africa ITF
+position figures, and the DWD ICON-EPS ensemble regridded from its triangular grid. Built on
 [`weather-skills-core`](https://github.com/weather-skills/weather-skills-core)
 (`>=0.1.1` from PyPI).
 
@@ -26,6 +26,7 @@ position figures. Built on
 | [`plot-rmm-phase`](skills/plot-rmm-phase/) | RMM phase-space diagram of `mjo-rmm-index` output: members on chosen days, ensemble-mean track, observed and BoM tracks |
 | [`africa-itf`](skills/africa-itf/) | Fetch the latest NOAA/CPC Africa ITF / ITCZ figure: the continental position map (`--location africa`, default) or the west/east latitude-vs-dekad time series (`west-africa`, `east-africa`, not maps; CPC uses both terms) |
 | [`kenya-forecast-fetch`](skills/kenya-forecast-fetch/) | Fetch a published KMSA / Rhiza Kenya forecast grid for one init: native ECMWF S2S precip (~1.5°, 101 members), its ~0.05° weekly and daily downscales, S2S temperatures, humidity and winds, medium-range precip, or GEFS. No credentials |
+| [`icon-eps-fetch`](skills/icon-eps-fetch/) | Fetch the newest DWD ICON-EPS global run (40 members, to 7.5 days: precip, 2 m temperature/dewpoint/humidity, 10 m winds and gusts, cloud cover, surface pressure), regridded from ICON's triangular grid to a regular lat/lon grid. No credentials; DWD keeps only ~24 h of runs |
 | [`resolve-chc-region`](skills/resolve-chc-region/) | Bbox and boundary polygon for the Tana River basin, Kenya's KNSDI national outline (plus county lines), the Kenya OND briefing box, and East Africa clipped at 15°S, in the same shape as `resolve-region` |
 | [`chc-plot-theme`](skills/chc-plot-theme/) | KMSA and classic CHC plot themes (`--theme kmsa` or `chc`, JSON to save for `plot --theme-file`) and CHC/KMSA rainfall colormaps (`chc_precip_<window>`, `chc_precip_anom_<window>`, `kmsa`; `--for ZARR` picks the window), printed as JSON for a trace's `meta.palette`, plus the KMSA-style Kenya map recipe |
 
@@ -75,6 +76,9 @@ uv run skills/plot-rmm-phase/scripts/plot_rmm_phase.py -i /tmp/rmm.zarr -o /tmp/
 
 # Latest CPC Africa ITF position map (default --location africa; the only map)
 uv run skills/africa-itf/scripts/fetch.py -o /tmp/itf_africa.png
+
+# Newest ICON-EPS 00 UTC run: daily precip rates for the coming week over Kenya
+uv run skills/icon-eps-fetch/scripts/fetch.py --bbox 5.5/33.5/-5/42.5 -o /tmp/icon_kenya.zarr
 
 # Tana River basin bbox + polygon (for clip-region --geojson / plot masks)
 uv run skills/resolve-chc-region/scripts/resolve.py "Tana River basin" --geojson /tmp/tana.json
