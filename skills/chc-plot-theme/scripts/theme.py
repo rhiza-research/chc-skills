@@ -55,9 +55,7 @@ FAMILIES = ("chc_precip", "chc_precip_anom")
     dest="for_ds",
     help="Zarr to plot; the window is read from its aggregation_period attr.",
 )
-def chc_plot_theme(
-    theme=None, output=None, colormap=None, window_days=None, for_ds=None, **kwargs
-):
+def chc_plot_theme(theme=None, output=None, colormap=None, window_days=None, for_ds=None, **kwargs):
     """Write a KMSA or CHC plot theme to a JSON file, or print one CHC or KMSA rainfall colormap."""
     if (theme is None) == (colormap is None):
         raise UsageError("pass exactly one of --theme or --colormap")
