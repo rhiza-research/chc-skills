@@ -10,10 +10,7 @@ INIT = "2026102100"
 # ICON-EPS publishing pattern: hourly to 48 h, 3-hourly to 72 h, 6-hourly to 120 h,
 # then 12-hourly to 180 h.
 LEADS = (
-    list(range(0, 49))
-    + list(range(51, 73, 3))
-    + list(range(78, 121, 6))
-    + list(range(132, 181, 12))
+    list(range(49)) + list(range(51, 73, 3)) + list(range(78, 121, 6)) + list(range(132, 181, 12))
 )
 MEMBERS = 3
 RATE_MM_DAY = 2.0
