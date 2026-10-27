@@ -27,6 +27,10 @@ position figures, and the DWD ICON-EPS ensemble regridded from its triangular gr
 | [`africa-itf`](skills/africa-itf/) | Fetch the latest NOAA/CPC Africa ITF / ITCZ figure: the continental position map (`--location africa`, default) or the west/east latitude-vs-dekad time series (`west-africa`, `east-africa`, not maps; CPC uses both terms) |
 | [`kenya-forecast-fetch`](skills/kenya-forecast-fetch/) | Fetch a published KMSA / Rhiza Kenya forecast grid for one init: native ECMWF S2S precip (~1.5°, 101 members), its ~0.05° weekly and daily downscales, S2S temperatures, humidity and winds, medium-range precip, or GEFS. No credentials |
 | [`icon-eps-fetch`](skills/icon-eps-fetch/) | Fetch the newest DWD ICON-EPS global run (40 members, to 7.5 days: precip, 2 m temperature/dewpoint/humidity, 10 m winds and gusts, cloud cover, surface pressure), regridded from ICON's triangular grid to a regular lat/lon grid. No credentials; DWD keeps only ~24 h of runs |
+| [`planette-reforecast-fetch`](skills/planette-reforecast-fetch/) | Fetch Planette's public ECMWF IFS 46-day reforecasts (10 members, 2006 on, 1.5°) for the init nearest one calendar day in every year, as a `(year, number, step, lat, lon)` model climatology named like dynamical's 46-day ECMWF forecast. No credentials |
+| [`era5-timeseries-fetch`](skills/era5-timeseries-fetch/) | Fetch hourly ERA5 single levels (t2m, tp, d2m, winds, …) over a bbox or point from ECMWF's geo-chunked ARCO store, for any set of windows: a range, repeated `--window`s, the same window every year (`--years 2006-2024`) or analog years (`--years 1997,2015,2023`). Decades in minutes; needs an ECMWF Data Store key |
+| [`lead-climatology`](skills/lead-climatology/) | Lay daily observations onto a forecast's lead days once per year, as a `(year, step, lat, lon)` observed climatology sample |
+| [`rank-downscale`](skills/rank-downscale/) | Downscale and bias-correct a forecast onto an observed climatology's grid by rank mapping: rank in the model climatology on the model grid, smooth the ranks, pick that rank from the sorted observed years (any variable, window and observed product) |
 | [`resolve-chc-region`](skills/resolve-chc-region/) | Bbox and boundary polygon for the Tana River basin, Kenya's KNSDI national outline (plus county lines), the Kenya OND briefing box, and East Africa clipped at 15°S, in the same shape as `resolve-region` |
 | [`chc-plot-theme`](skills/chc-plot-theme/) | KMSA and classic CHC plot themes (`--theme kmsa` or `chc`, JSON to save for `plot --theme-file`) and CHC/KMSA rainfall colormaps (`chc_precip_<window>`, `chc_precip_anom_<window>`, `kmsa`; `--for ZARR` picks the window), printed as JSON for a trace's `meta.palette`, plus the KMSA-style Kenya map recipe |
 
@@ -85,6 +89,15 @@ uv run skills/resolve-chc-region/scripts/resolve.py "Tana River basin" --geojson
 
 # CHC rainfall colormap sized to a totals Zarr's aggregation_period
 uv run skills/chc-plot-theme/scripts/theme.py --colormap chc_precip --for /tmp/totals.zarr
+
+# Model climatology for a 2026-10-22 ECMWF forecast over Kenya: 2006-2024 reforecasts
+uv run skills/planette-reforecast-fetch/scripts/fetch.py --date 2026-10-22 -v pr -v t2m --bbox 5.5/33.5/-5/42.5 -o /tmp/rf_kenya.zarr
+
+# ERA5 2 m temperature for the same 46-day window in every year 2006-2024 (needs ECMWF_DATASTORES_KEY)
+uv run skills/era5-timeseries-fetch/scripts/fetch.py --start-time 2006-10-22 --end-time 2006-12-06 --years 2006-2024   --bbox 5.5/33.5/-5/42.5 -v t2m -o /tmp/era5_kenya.zarr
+
+# Weekly forecast downscaled onto an observed weekly climatology (full chain: skills/rank-downscale/SKILL.md)
+uv run skills/rank-downscale/scripts/rank_downscale.py -i /tmp/fc_weekly.zarr -o /tmp/fc_chirps.zarr   --qq-model /tmp/rf_weekly.zarr --qq-reference /tmp/chirps_weekly.zarr --reference-grid /tmp/chirps_weekly.zarr   --rank-sigma 1.5 --field-sigma 0.4
 ```
 
 If anomalies are not already in the input, compute them first (a climatology
