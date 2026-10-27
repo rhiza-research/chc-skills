@@ -54,10 +54,16 @@ _MAX_LEADS = 46
 # compressed each; blocks this size keep a bbox read to a few range requests per chunk.
 _BLOCK_SIZE = 8 * 2**20
 
+# Env vars holding a raw service-account key JSON, checked in this order:
+# GCLOUD_SERVICE_CREDENTIALS is the name runners store the shared GCP key under;
+# NEURAL_GCM_SERVICE_CREDENTIALS is the one pbc-fetch and neuralgcm-fetch read.
+_CREDENTIAL_ENVS = ("GCLOUD_SERVICE_CREDENTIALS", "NEURAL_GCM_SERVICE_CREDENTIALS")
+
 _AUTH_MSG = (
     f"cannot read gs://{_BUCKET}/{_PREFIX} (private GCS). Set "
-    "NEURAL_GCM_SERVICE_CREDENTIALS to the full service-account key JSON (no file "
-    "needed), GOOGLE_APPLICATION_CREDENTIALS to a service-account JSON file path, or "
+    "GCLOUD_SERVICE_CREDENTIALS (or NEURAL_GCM_SERVICE_CREDENTIALS) to the full "
+    "service-account key JSON (no file needed), GOOGLE_APPLICATION_CREDENTIALS to a "
+    "service-account JSON file path, or "
     "run `gcloud auth application-default login` (a plain `gcloud auth login` also "
     "works when the gcloud CLI is on PATH)."
 )
@@ -80,16 +86,21 @@ def _gcloud_token():
 
 
 def _token():
-    """gcsfs token: NEURAL_GCM_SERVICE_CREDENTIALS, then None for
-    GOOGLE_APPLICATION_CREDENTIALS / Application Default Credentials, then the gcloud
-    CLI's login.
+    """gcsfs token: the service-account key JSON in GCLOUD_SERVICE_CREDENTIALS or
+    NEURAL_GCM_SERVICE_CREDENTIALS, then None for GOOGLE_APPLICATION_CREDENTIALS /
+    Application Default Credentials, then the gcloud CLI's login.
     """
-    creds_json = os.environ.get("NEURAL_GCM_SERVICE_CREDENTIALS")
-    if creds_json:
+    for name in _CREDENTIAL_ENVS:
+        creds_json = os.environ.get(name, "").strip()
+        if not creds_json:
+            continue
         try:
             return json.loads(creds_json)
         except json.JSONDecodeError as exc:
-            raise DataError(f"NEURAL_GCM_SERVICE_CREDENTIALS is not valid JSON ({exc}).") from None
+            raise DataError(
+                f"{name} is not valid JSON (line {exc.lineno}, column {exc.colno}); it must "
+                "hold the full service-account key JSON."
+            ) from None
     import google.auth
     import google.auth.exceptions
 

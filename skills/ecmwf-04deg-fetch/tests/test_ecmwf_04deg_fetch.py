@@ -147,3 +147,20 @@ def test_missing_init_exits_1(tmp_path, fetch_mod, monkeypatch):
     with pytest.raises(SystemExit) as exc:
         run_skill(fetch_mod.fetch, "--date", "2020-01-01", "-o", str(tmp_path / "x.zarr"))
     assert exc.value.code == 1
+
+
+def test_key_json_env_order(fetch_mod, monkeypatch):
+    for name in fetch_mod._CREDENTIAL_ENVS:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("NEURAL_GCM_SERVICE_CREDENTIALS", '{"client_email": "neural"}')
+    assert fetch_mod._token() == {"client_email": "neural"}
+    monkeypatch.setenv("GCLOUD_SERVICE_CREDENTIALS", '{"client_email": "gcloud"}')
+    assert fetch_mod._token() == {"client_email": "gcloud"}
+
+
+def test_bad_key_json_names_the_variable_not_the_value(fetch_mod, monkeypatch):
+    monkeypatch.setenv("GCLOUD_SERVICE_CREDENTIALS", "not-json-secret")
+    with pytest.raises(fetch_mod.DataError) as exc:
+        fetch_mod._token()
+    assert "GCLOUD_SERVICE_CREDENTIALS" in str(exc.value)
+    assert "not-json-secret" not in str(exc.value)

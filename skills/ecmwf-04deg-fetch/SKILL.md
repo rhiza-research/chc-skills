@@ -2,7 +2,7 @@
 name: ecmwf-04deg-fetch
 description: "Fetch one CHC-standardized ECMWF 0.4 degree daily precipitation ensemble (101 members, 46 lead days, 60S-60N) from the private Sheerwater archive gs://sheerwater-datalake/ecmwf-0_4/forecast/, as a weather-skills forecast Zarr of daily rates. Reads only the chunks inside --bbox. Needs Google Cloud credentials with read access to that bucket. Use for higher-resolution ECMWF sub-seasonal precipitation than the 1.5 degree S2S feed. Licensed ECMWF data: never publish the raw fields."
 license: MIT
-compatibility: "Requires Python 3.12 and uv. Reads private GCS gs://sheerwater-datalake/ecmwf-0_4/forecast via gcsfs + h5netcdf (HTTP range reads). Requires Google Cloud credentials: NEURAL_GCM_SERVICE_CREDENTIALS (the raw service-account key JSON), GOOGLE_APPLICATION_CREDENTIALS (a service-account JSON file path), Application Default Credentials from `gcloud auth application-default login`, or a `gcloud auth login` session with the gcloud CLI on PATH."
+compatibility: "Requires Python 3.12 and uv. Reads private GCS gs://sheerwater-datalake/ecmwf-0_4/forecast via gcsfs + zarr (h5netcdf for inits not yet converted). Requires Google Cloud credentials: GCLOUD_SERVICE_CREDENTIALS or NEURAL_GCM_SERVICE_CREDENTIALS (the raw service-account key JSON), GOOGLE_APPLICATION_CREDENTIALS (a service-account JSON file path), Application Default Credentials from `gcloud auth application-default login`, or a `gcloud auth login` session with the gcloud CLI on PATH."
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py *)
 metadata:
   catalog-group: fetchers
@@ -11,13 +11,15 @@ metadata:
   openclaw:
     requires:
       env:
-        - NEURAL_GCM_SERVICE_CREDENTIALS
-    primaryEnv: NEURAL_GCM_SERVICE_CREDENTIALS
+        - GCLOUD_SERVICE_CREDENTIALS
+    primaryEnv: GCLOUD_SERVICE_CREDENTIALS
     envVars:
-      - name: NEURAL_GCM_SERVICE_CREDENTIALS
+      - name: GCLOUD_SERVICE_CREDENTIALS
         description: Full contents of a GCP service-account key JSON with read access to gs://sheerwater-datalake/ecmwf-0_4. Use this when the runtime can only inject secret values, not files.
+      - name: NEURAL_GCM_SERVICE_CREDENTIALS
+        description: The same key JSON under the name pbc-fetch and neuralgcm-fetch read. Used only if GCLOUD_SERVICE_CREDENTIALS is unset.
       - name: GOOGLE_APPLICATION_CREDENTIALS
-        description: Path to a GCP service-account JSON file that can read gs://sheerwater-datalake/ecmwf-0_4. Used only if NEURAL_GCM_SERVICE_CREDENTIALS is unset.
+        description: Path to a GCP service-account JSON file that can read gs://sheerwater-datalake/ecmwf-0_4. Used only if neither key JSON variable is set.
 ---
 
 # ecmwf-04deg-fetch
