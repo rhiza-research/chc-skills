@@ -1,6 +1,8 @@
 """Correctness tests for kmsa-wrf-fetch (synthetic WRF runs in a local or fake GCS root)."""
 
 import shutil
+import sys
+import types
 from datetime import datetime
 
 import cftime
@@ -134,6 +136,9 @@ def test_reads_gcs_root(tmp_path, fetch_mod, monkeypatch):
     seen = {}
 
     class FakeGCS:
+        def __init__(self, token=None):
+            seen["token"] = token
+
         def ls(self, folder, detail=False):
             seen["ls"] = folder
             return [f"{folder[5:]}/{src.name}", f"{folder[5:]}/20261013_to_20261020_fcst.txt"]
@@ -142,11 +147,13 @@ def test_reads_gcs_root(tmp_path, fetch_mod, monkeypatch):
             seen["get"] = remote
             shutil.copy(src, local)
 
-    monkeypatch.setattr(fetch_mod, "_gcs", lambda: FakeGCS())
+    monkeypatch.setitem(sys.modules, "gcsfs", types.SimpleNamespace(GCSFileSystem=FakeGCS))
+    monkeypatch.setenv("GCLOUD_SERVICE_CREDENTIALS", '{"type": "service_account"}')
     out = tmp_path / "wrf.zarr"
 
     run_skill(fetch_mod.fetch, "--date", "2026-10-13", "-o", str(out))
 
+    assert seen["token"] == {"type": "service_account"}
     assert seen["ls"] == "gs://sheerwater-datalake/kmsa-wrf/7_day"
     assert seen["get"] == f"gs://sheerwater-datalake/kmsa-wrf/7_day/{src.name}"
     with xr.open_zarr(out, consolidated=True) as ds:

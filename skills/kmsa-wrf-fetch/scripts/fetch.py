@@ -37,38 +37,6 @@ _DEFAULT_ROOT = "gs://sheerwater-datalake/kmsa-wrf"
 _PRODUCTS = {"7day": "7_day", "daily": "Daily_Data"}
 _VARIABLES = ("tp", "t2m")
 _FILE_RE = re.compile(r"^(\d{8})_to_(\d{8})_fcst\.nc$")
-_AUTH_MSG = (
-    f"cannot read {_DEFAULT_ROOT} (private GCS). Set NEURAL_GCM_SERVICE_CREDENTIALS to the "
-    "full service-account key JSON (no file needed), GOOGLE_APPLICATION_CREDENTIALS to a "
-    "service-account JSON file path, or run `gcloud auth application-default login`."
-)
-
-
-def _gcs():
-    """Authenticated GCS filesystem: NEURAL_GCM_SERVICE_CREDENTIALS, then ADC."""
-    import gcsfs
-
-    creds_json = os.environ.get("NEURAL_GCM_SERVICE_CREDENTIALS")
-    token = None
-    if creds_json:
-        try:
-            token = json.loads(creds_json)
-        except json.JSONDecodeError as exc:
-            raise DataError(f"NEURAL_GCM_SERVICE_CREDENTIALS is not valid JSON ({exc}).") from None
-    try:
-        return gcsfs.GCSFileSystem(token=token)
-    except Exception as exc:  # noqa: BLE001 — surface auth failures cleanly
-        raise DataError(f"{_AUTH_MSG} ({exc})") from None
-
-
-def _run_files(names) -> dict[str, str]:
-    """Map YYYYMMDD start date → file name, for every well-named NetCDF in a listing."""
-    runs = {}
-    for name in names:
-        m = _FILE_RE.match(name)
-        if m:
-            runs[m.group(1)] = name
-    return runs
 
 
 @weather_skill(name="kmsa-wrf-fetch", version=_SKILL_VERSION)
@@ -108,22 +76,36 @@ def fetch(product, root, date, bbox, variable, probe_latest, **kwargs):
     if not probe_latest and date is None:
         raise UsageError("--date is required unless --probe-latest is set")
 
-    remote = root.startswith("gs://")
     folder = f"{root.rstrip('/')}/{_PRODUCTS[product]}"
+    remote = folder.startswith("gs://")
     if remote:
-        fs = _gcs()
+        import gcsfs
+
+        # GCLOUD_SERVICE_CREDENTIALS (key JSON), else GOOGLE_APPLICATION_CREDENTIALS / ADC.
+        creds_json = os.environ.get("GCLOUD_SERVICE_CREDENTIALS")
         try:
-            listing = fs.ls(folder, detail=False)
+            token = json.loads(creds_json) if creds_json else None
+        except json.JSONDecodeError as exc:
+            raise DataError(f"GCLOUD_SERVICE_CREDENTIALS is not valid JSON ({exc}).") from None
+        try:
+            fs = gcsfs.GCSFileSystem(token=token)
+            names = [key.rsplit("/", 1)[-1] for key in fs.ls(folder, detail=False)]
         except FileNotFoundError:
             raise DataError(f"archive folder not found: {folder}") from None
         except Exception as exc:  # noqa: BLE001 — surface auth / network failures cleanly
-            raise DataError(f"{_AUTH_MSG} ({exc})") from None
-        runs = _run_files(key.rsplit("/", 1)[-1] for key in listing)
+            raise DataError(
+                f"cannot read {folder} (private GCS). Set GCLOUD_SERVICE_CREDENTIALS to the "
+                "full service-account key JSON (no file needed), GOOGLE_APPLICATION_CREDENTIALS "
+                "to a service-account JSON file path, or run "
+                f"`gcloud auth application-default login`. ({exc})"
+            ) from None
     else:
-        local_folder = Path(folder).expanduser()
-        if not local_folder.is_dir():
-            raise DataError(f"archive folder not found: {local_folder}")
-        runs = _run_files(p.name for p in local_folder.iterdir())
+        local = Path(folder).expanduser()
+        if not local.is_dir():
+            raise DataError(f"archive folder not found: {local}")
+        names = [p.name for p in local.iterdir()]
+    # YYYYMMDD run start date → file name, for every well-named NetCDF.
+    runs = {m.group(1): m.group(0) for m in map(_FILE_RE.match, names) if m}
 
     if probe_latest:
         latest = max(runs) if runs else None
@@ -144,13 +126,13 @@ def fetch(product, root, date, bbox, variable, probe_latest, **kwargs):
             path = Path(tmp) / name
             fs.get(f"{folder}/{name}", str(path))
         else:
-            path = Path(folder).expanduser() / name
+            path = local / name
         # Units "hours since 1-1-1" make xarray warn about the ambiguous year; pad it.
         with xr.open_dataset(path, decode_times=False) as raw:
             raw["time"].attrs["units"] = "hours since 0001-01-01 00:00:00"
             ds = xr.decode_cf(raw).load()
 
-    missing = [name for name in ("rainc", "rainnc", "t2") if name not in ds.data_vars]
+    missing = [v for v in ("rainc", "rainnc", "t2") if v not in ds.data_vars]
     if missing:
         raise DataError(
             f"{name} lacks {', '.join(missing)}; only runs in the current archive "
