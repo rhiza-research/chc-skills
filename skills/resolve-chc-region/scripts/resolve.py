@@ -10,7 +10,7 @@ import json
 import sys
 from pathlib import Path
 
-from weather_skills_core import DataError, UsageError, weather_skill
+from weather_skills_core import DataError, UsageError, provenance, weather_skill
 from weather_skills_core.region import bbox_from_geometry, clean_region_name
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
@@ -64,11 +64,13 @@ def load(name):
     return key, fc
 
 
-def write(path, text, what):
+def write(path, text, what, history):
+    """Write ``text`` to ``path`` and stamp it with ``history``."""
     try:
         Path(path).write_text(text)
     except OSError as exc:
         raise DataError(f"could not write {what} to {path}: {exc}") from None
+    provenance.stamp_figure(Path(path), history)
     print(f"Wrote {what}: {path}", file=sys.stderr)
 
 
@@ -84,16 +86,31 @@ def write(path, text, what):
 )
 def resolve_chc_region(name, geojson, counties_geojson, **kwargs):
     """Resolve a bundled CHC region to a lat/lon bounding box and optional boundary GeoJSON."""
+    for flag, path in (("--geojson", geojson), ("--counties-geojson", counties_geojson)):
+        if path and not provenance.can_replace_output(Path(path)):
+            raise UsageError(
+                f"{flag} {path} already exists and was not written by a weather skill, "
+                "so it may be your own data; pass a new path"
+            )
     key, fc = load(name)
+    history = [
+        provenance.build_entry(
+            "resolve-chc-region",
+            _SKILL_VERSION,
+            {"name": name},
+            None,
+            revision=provenance.resolve_skill_revision(__file__),
+        )
+    ]
 
     # Write files before printing, so a failed write never leaves a bbox on stdout.
     if counties_geojson:
         counties = DATA / f"{key}_counties.geojson"
         if not counties.exists():
             raise UsageError(f"{name!r} has no county boundaries; only Kenya does.")
-        write(counties_geojson, counties.read_text(), "county boundaries")
+        write(counties_geojson, counties.read_text(), "county boundaries", history)
     if geojson:
-        write(geojson, json.dumps(fc, separators=(",", ":")), "boundary polygon")
+        write(geojson, json.dumps(fc, separators=(",", ":")), "boundary polygon", history)
 
     n, w, s, e = fc["features"][0]["properties"]["bbox"]
     print(f"{n}/{w}/{s}/{e}")
