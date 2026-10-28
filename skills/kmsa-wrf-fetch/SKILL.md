@@ -1,6 +1,6 @@
 ---
 name: kmsa-wrf-fetch
-description: "Read one KMSA (Kenya Meteorological Department) WRF forecast run, the 7- to 8-day run or the 3-day daily run, at 3-hourly steps on a ~0.036° Kenya grid, as a weather-skills forecast Zarr: total precipitation and 2 m temperature. Reads the private daily mirror in gs://sheerwater-datalake/kmsa-wrf with Google Cloud service-account credentials. Use when a task needs the KMSA WRF forecast."
+description: "Read one KMSA WRF forecast run, the 7- to 8-day run or the 3-day daily run, at 3-hourly steps on a ~0.036° Kenya grid, as a weather-skills forecast Zarr: total precipitation and 2 m temperature. Reads the private daily mirror in gs://sheerwater-datalake/kmsa-wrf with Google Cloud service-account credentials. Use when a task needs the KMSA WRF forecast."
 license: MIT
 compatibility: Requires Python 3.12 and uv. Reads private GCS gs://sheerwater-datalake/kmsa-wrf via gcsfs, with GCLOUD_SERVICE_CREDENTIALS (the raw service-account key JSON), GOOGLE_APPLICATION_CREDENTIALS (a key file path), or Application Default Credentials. Can also read a local copy of the archive.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py *)
