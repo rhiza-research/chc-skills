@@ -13,6 +13,7 @@
 # ///
 """Fetch a forecast grid from the public Kenya forecasts archive as a weather-skills Zarr."""
 
+import datetime as dt
 import json
 import re
 import sys
@@ -40,6 +41,8 @@ _BUCKET = "kenya-forecasting-data"
 _GCS_API = f"https://storage.googleapis.com/storage/v1/b/{_BUCKET}/o"
 _GCS_MEDIA = f"https://storage.googleapis.com/{_BUCKET}"
 _HTTP_TIMEOUT = 60
+# Init folders checked (one HEAD each) when --date has no store, to list nearby inits.
+_NEAR_CHECKS = 40
 _DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
 _DEFAULT_DATASET = "precip"
 
@@ -139,18 +142,34 @@ def _store_exists(key: str) -> bool:
         raise DataError(f"GCS HEAD failed for {meta_key!r}: {exc.reason}") from None
 
 
+def _days_between(a: str, b: str) -> int:
+    return (dt.date.fromisoformat(a) - dt.date.fromisoformat(b)).days
+
+
 def _resolve_date(date, dataset: str) -> str:
     if date is not None:
         iso = date.isoformat()
         key = _store_key(dataset, iso)
         if not _store_exists(key):
+            # Init folders exist most days but each product only in some of them:
+            # check the folders nearest the requested date (closest first, capped)
+            # and list the ones that hold it, so one call is enough.
+            dates = _list_init_dates()
+            nearest = sorted(dates, key=lambda d: abs(_days_between(d, iso)))
+            checked = nearest[:_NEAR_CHECKS]
+            found = [d for d in checked if _store_exists(_store_key(dataset, d))]
+            if found:
+                listing = (
+                    f"Nearest inits with {dataset!r}: {', '.join(sorted(found[:6]))} (checked the "
+                    f"{len(checked)} init folders from {min(checked)} to {max(checked)}). "
+                )
+            else:
+                listing = f"None of the {len(checked)} init folders nearest it has {dataset!r}. "
             raise DataError(
                 f"no {dataset!r} store under init date {iso} in gs://{_BUCKET}/ "
-                f"(expected gs://{_BUCKET}/{key}). Older folders may only have "
-                "legacy GRIB/NetCDF under data/ — pick a more recent init, or "
-                "use ecmwf-fetch / dynamical-fetch for live grids. Browse "
-                "https://kenya-forecasts.sheerwater.rhizaresearch.org/files/ "
-                "or omit --date to take the latest available."
+                f"(expected gs://{_BUCKET}/{key}). {listing}Older folders may only have "
+                "legacy GRIB/NetCDF under data/; use ecmwf-fetch / dynamical-fetch for "
+                "live grids, or omit --date to take the latest available."
             )
         return iso
 

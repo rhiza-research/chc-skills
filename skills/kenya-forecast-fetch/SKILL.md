@@ -52,7 +52,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --probe-latest [ID]
 - Lead counts vary by init: recent weekly files have 4 weeks (the daily GeoTIFF 28 days), older ones 6 weeks.
 - The downscaled NetCDF and GeoTIFF are downloaded whole before `--bbox` applies (~0.7 GB peak memory for the full 101-member weekly file).
 - Downscaled cell centres can sit half a cell off CHIRPS; align grids before a cell-by-cell comparison.
-- A `--date` folder without the product exits 1.
+- A `--date` folder without the product exits 1 and lists the nearest init folders that have it (up to 6, from the 40 folders nearest the date). Pick one of those rather than trying other dates.
 
 ### Example
 ```bash
