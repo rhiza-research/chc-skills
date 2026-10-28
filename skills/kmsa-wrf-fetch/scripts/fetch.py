@@ -29,7 +29,7 @@ from weather_skills_core.units import (
 )
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "0.0.1"
+_SKILL_VERSION = "0.0.2"
 
 # Daily mirror of /home/nwp1/LIBS2/{7_day,Daily_Data} on the KMSA NWP workstation.
 _DEFAULT_ROOT = "gs://sheerwater-datalake/kmsa-wrf"
