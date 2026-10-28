@@ -60,7 +60,3 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py [--product 7day|daily] --probe-lates
 uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --date 2026-10-13 --bbox 1/36/-3/38 -v tp -o wrf_7day_nairobi.zarr
 ```
 Writes 3-hourly rain rates around Nairobi from the 2026-10-13 06Z 7-day run.
-
-## Details
-
-Archive layout, the daily mirror, and the file checks: [references/REFERENCE.md](references/REFERENCE.md).
