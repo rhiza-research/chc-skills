@@ -89,6 +89,24 @@ def test_kenya_counties_geojson(tmp_path, capsys, resolve):
     assert "Wrote county boundaries" in capsys.readouterr().err
     fc = json.loads(path.read_text())
     assert len(fc["features"]) == 47
+    history = json.loads(fc["weather_skills_history"])
+    assert history[0]["skill"] == "resolve-chc-region"
+    assert history[0]["args"] == {"name": "KEN"}
+
+
+def test_reruns_replace_their_own_output_but_not_other_files(tmp_path, capsys, resolve):
+    path = tmp_path / "kenya.geojson"
+    run_skill(resolve, "Kenya", "--geojson", str(path))
+    run_skill(resolve, "East Africa", "--geojson", str(path))
+    assert json.loads(path.read_text())["features"][0]["properties"]["region_name"] == "east_africa"
+
+    mine = tmp_path / "mine.geojson"
+    mine.write_text('{"type": "FeatureCollection", "features": []}')
+    with pytest.raises(SystemExit) as exc:
+        run_skill(resolve, "Kenya", "--geojson", str(mine))
+    assert exc.value.code == 2
+    assert "not written by a weather skill" in capsys.readouterr().err
+    assert json.loads(mine.read_text())["features"] == []
 
 
 def test_counties_only_for_kenya(tmp_path, resolve, capsys):

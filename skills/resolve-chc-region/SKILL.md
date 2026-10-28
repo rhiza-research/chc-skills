@@ -29,6 +29,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/resolve.py NAME [--geojson PATH] [--counties-
   | `East Africa` (south to 15°S) | — | `17.9983/21.9035/-15.0/51.1339` |
 - `--geojson` — write the boundary as a one-feature `FeatureCollection`, for clipping or a plot mask or outline.
 - `--counties-geojson` — Kenya only: write the 47 county polygons as one `FeatureCollection` (properties `county_index`, `source`; no county names), for a plot outline layer.
+- Both files carry their provenance in a top-level `weather_skills_history` member. An existing file a skill did not write exits 2.
 
 ### Output
 - stdout: `N/W/S/E` in decimal degrees.
