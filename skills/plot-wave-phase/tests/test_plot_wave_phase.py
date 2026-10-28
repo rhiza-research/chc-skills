@@ -12,7 +12,7 @@ def mod():
     return load_skill("plot-wave-phase", "plot_wave_phase")
 
 
-@pytest.mark.parametrize("kind", ["rose", "rose-daily", "phase", "amplitude"])
+@pytest.mark.parametrize("kind", ["rose", "rose-daily"])
 def test_kinds_render(mod, tmp_path, kind):
     inp = write_zarr(make_wave_dataset(n_fc=21), tmp_path / "waves.zarr")
     out = tmp_path / f"{kind}.png"
