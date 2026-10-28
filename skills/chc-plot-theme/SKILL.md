@@ -1,6 +1,6 @@
 ---
 name: chc-plot-theme
-description: "Print the Kenya Meteorological Department (KMSA) or classic CHC plot theme as JSON to save for plot --theme-file, or a CHC or KMSA rainfall colormap as a JSON object for a plot trace's meta.palette, choosing the CHC window (daily, week, month, season) from a window length or a Zarr's aggregation period. Use when a rainfall map should look like a KMSA Kenya rainfall map or a classic CHC map, or use the CHC precipitation classes."
+description: "Write the Kenya Meteorological Department (KMSA) or classic CHC plot theme to a JSON file for plot --theme-file, or a CHC or KMSA rainfall colormap as a JSON object for a plot trace's meta.palette, choosing the CHC window (daily, week, month, season) from a window length or a Zarr's aggregation period. Use when a rainfall map should look like a KMSA Kenya rainfall map or a classic CHC map, or use the CHC precipitation classes."
 license: MIT
 compatibility: Requires Python 3.12 and uv.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/theme.py *)
@@ -10,23 +10,24 @@ metadata:
 
 # chc-plot-theme
 
-Prints a KMSA or CHC plot theme as JSON, or one rainfall colormap as a single line of JSON (`name`, `colors`, `bounds`), for the weather-skills `plot` skills.
+Writes a KMSA or CHC plot theme to a JSON file, or prints one rainfall colormap as a single line of JSON (`name`, `colors`, `bounds`), for the weather-skills `plot` skills.
 
 ## Usage
 
 ```bash
-uv run ${CLAUDE_SKILL_DIR}/scripts/theme.py --theme kmsa|chc > THEME.json
+uv run ${CLAUDE_SKILL_DIR}/scripts/theme.py --theme kmsa|chc [-o THEME.json]
 uv run ${CLAUDE_SKILL_DIR}/scripts/theme.py --colormap NAME [--window-days N | --for PATH.zarr]
 ```
 
 ### Arguments
-- `--theme` — `kmsa` (KMSA rainfall classes and Kenya-map styling) or `chc` (classic CHC classes): print that theme as JSON. Save it to a `.json` file in your working directory and pass that file to the plotting skills' `--theme-file`. Exactly one of `--theme` and `--colormap` is required.
+- `--theme` — `kmsa` (KMSA rainfall classes and Kenya-map styling) or `chc` (classic CHC classes): write that theme to a JSON file and pass the file to the plotting skills' `--theme-file`. Exactly one of `--theme` and `--colormap` is required.
+- `-o`, `--output` — theme file to write, only with `--theme`; default `kmsa_theme.json` or `chc_theme.json` in the working directory.
 - `--colormap` — `kmsa`, `chc_precip_daily` / `_week` / `_month` / `_season`, `chc_precip_anom_*` (same windows), or the family `chc_precip` / `chc_precip_anom` with `--window-days` or `--for` to pick the window. Classes are listed under Details.
 - `--window-days` — window length in days; only with a family name: under 2 → `daily`, up to 10 (a week or dekad) → `week`, under 40 → `month`, longer → `season`. stderr names the choice.
 - `--for` — Zarr you will plot, only with a family name; the window comes from its data variables' `aggregation_period`. Exits 2 unless exactly one period is found. `--window-days` wins when both are given.
 
 ### Output
-`--theme`: the theme JSON on stdout. `--colormap`: one JSON object on stdout.
+`--theme`: the theme JSON file; stderr names it. `--colormap`: one JSON object on stdout.
 
 ### Notes
 - The theme and colormaps are for period totals or anomalies in mm, so aggregate and convert to totals before plotting.
@@ -39,21 +40,19 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/theme.py --colormap NAME [--window-days N | -
 ### Example
 KMSA-style Kenya map with county lines and the Tana basin outline:
 ```bash
-uv run ${CLAUDE_SKILL_DIR}/scripts/theme.py --theme kmsa > kmsa_theme.json
+uv run ${CLAUDE_SKILL_DIR}/scripts/theme.py --theme kmsa -o kmsa_theme.json
 plot -i totals_kenya.zarr --layer outline:kenya_counties.json --layer outline:tana.json -o kenya_kmsa.png \
   --theme-file kmsa_theme.json \
-  --spec '{"layout": {"title": {"text": "Rainfall 21–30 Sep 2026"}},
-           "data": [{"uid": "outline1", "line": {"color": "#4d4d4d", "width": 0.8}},
-                    {"uid": "outline2", "line": {"width": 1.6}}]}'
+  --spec '{"layout": {"title": {"text": "Rainfall 21–30 Sep 2026"}}}'
 ```
-Draws dekad totals in KMSA classes, with thin grey county lines and a heavier basin outline; outline layers are `outline1`, `outline2`, … in `--layer` order. The GeoJSON comes from resolve-chc-region.
+Draws dekad totals in KMSA classes, with the theme's thin dark grey county lines (an outline with many polygons takes the theme's admin-1 style) and the basin as a heavier black line. To restyle one, its layer is `outline1`, `outline2`, … in `--layer` order: `{"data": [{"uid": "outline2", "line": {"width": 1.6}}]}`. The GeoJSON comes from resolve-chc-region.
 
 ## Details
 
 | Theme | Draws |
 |---|---|
 | `kmsa` | Rainfall totals in the KMSA classes < 1, 2 - 10, 11 - 20, 21 - 50, 51 - 70, 71 - 100, > 100 mm (white, pale green, green, light blue, blue, orange, red-orange), one labelled legend box per class; Arial text; black national borders, dark grey county lines. Other fields keep the standard colors. |
-| `chc` | Classic CHC map classes, fixed whatever the period: totals in `ppt_total` (0, 2, 5, 10, 25, 50, 75, 100, 150, 200, 300, 500, 750, 1000, 1500, 2500 mm), anomalies in the full CHC anomaly classes (±10 … ±500 mm), percent of normal in `ppt_poa`, SPI in `spi`. The standard look instead crops the CHC hues to a window picked from `aggregation_period`. Other fields keep the standard colors. |
+| `chc` | Classic CHC map classes, fixed whatever the period: totals in `ppt_total` (0, 2, 5, 10, 25, 50, 75, 100, 150, 200, 300, 500, 750, 1000, 1500, 2500 mm), anomalies in the full CHC anomaly classes (±10 … ±500 mm), percent of normal in `ppt_poa`, SPI in `spi`. The standard look instead crops the CHC hues to a window picked from `aggregation_period`. For a day, week or dekad the fixed classes leave most of the colorbar unused (a dekad anomaly rarely passes ±100 mm); use `--colormap chc_precip_anom --for ZARR` (or `chc_precip`) in that trace's `meta.palette` instead. Other fields keep the standard colors. |
 
 | Colormap | Classes |
 |---|---|
