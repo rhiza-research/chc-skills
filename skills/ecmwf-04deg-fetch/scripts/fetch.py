@@ -33,6 +33,7 @@ import re
 import shutil
 import subprocess
 import sys
+from datetime import UTC, datetime
 from datetime import date as _date
 
 from weather_skills_core import DataError, UsageError, weather_skill
@@ -188,7 +189,7 @@ def _list_inits(years) -> dict:
 
 def _latest_init():
     """Newest usable archived init: this year's, else last year's."""
-    year = _date.today().year
+    year = datetime.now(UTC).year
     for years in ([year], [year - 1]):
         inits = _list_inits(years)
         for init in sorted(inits, reverse=True):
