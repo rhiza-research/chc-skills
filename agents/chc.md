@@ -82,7 +82,7 @@ weather-skills transforms and plotters when those are available (for example
     - **`plot-wave-hovmoller`** (`--style ncics|amplitude|contours|probability`, Kenya boxed
       by default);
     - **`plot-wave-phase`** (`--wave kelvin|er|mjo --lon 37.5 --kind
-      rose|rose-daily|phase|amplitude`). This answers "will the Kelvin wave / MJO bring a wet
+      rose|rose-daily`). This answers "will the Kelvin wave / MJO bring a wet
       phase to Kenya in week N".
 - **`mjo-rmm-index`** computes the Wheeler–Hendon RMM for every member.
   - It takes `--olr` (as above, a 15S–15N bbox is enough) and `--wind`. Fetch the wind from
