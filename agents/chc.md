@@ -120,6 +120,15 @@ weather-skills transforms and plotters when those are available (for example
   forecast Zarr of `mm day-1` rates. Always pass a `--bbox`: only the chunks it
   touches are read. It needs Google Cloud credentials, and the data is
   licensed ECMWF output, so never publish the raw fields.
+- **`ecmwf-04deg-reforecast-fetch`** fetches the 0.4° reforecasts (hindcasts)
+  made for a forecast `--date`: 20 past years × 11 members, 46 lead days, East
+  Africa only, as `mm day-1` rates with one `init_time` per run (dated in its
+  hindcast year). `--window-days 4` pools ~5 neighbouring inits for an
+  m-climate; `--years` cuts the download. Its chunks hold the whole domain, so
+  a bbox doesn't shrink the read (~180 MB per init). Pair it with
+  `ecmwf-04deg-fetch` for anomalies against the model's own climate, use it as
+  `downscale --qq-model`, or compare single years with CHIRPS/IMERG. Same
+  credentials and the same licence as the forecast.
 - **`resolve-chc-region`** turns a bundled CHC region into an `N/W/S/E`
   bbox and, with `--geojson`, its boundary polygon: the **Tana River basin**
   (a supplied ~126,000 km² outline, larger than HydroBASINS, so basin
