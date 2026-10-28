@@ -82,7 +82,7 @@ weather-skills transforms and plotters when those are available (for example
     - **`plot-wave-hovmoller`** (`--style ncics|amplitude|contours|probability`, Kenya boxed
       by default);
     - **`plot-wave-phase`** (`--wave kelvin|er|mjo --lon 37.5 --kind
-      rose|rose-daily|phase|amplitude`). This answers "will the Kelvin wave / MJO bring a wet
+      rose|rose-daily`). This answers "will the Kelvin wave / MJO bring a wet
       phase to Kenya in week N".
 - **`mjo-rmm-index`** computes the Wheeler–Hendon RMM for every member.
   - It takes `--olr` (as above, a 15S–15N bbox is enough) and `--wind`. Fetch the wind from
@@ -114,6 +114,12 @@ weather-skills transforms and plotters when those are available (for example
   run `deaccumulate` on it. `precip_downscaled` and `medium_range_precip`
   carry a one-week `aggregation_period`, so they are ready for period totals
   without weekly aggregation.
+- **`ecmwf-04deg-fetch`** opens one CHC 0.4° ECMWF daily precip ensemble
+  (101 members, 46 lead days) from the private Sheerwater archive (`--date`,
+  `--bbox`, `--max-lead`; `--probe-latest` for the newest init) and writes a
+  forecast Zarr of `mm day-1` rates. Always pass a `--bbox`: only the chunks it
+  touches are read. It needs Google Cloud credentials, and the data is
+  licensed ECMWF output, so never publish the raw fields.
 - **`resolve-chc-region`** turns a bundled CHC region into an `N/W/S/E`
   bbox and, with `--geojson`, its boundary polygon: the **Tana River basin**
   (a supplied ~126,000 km² outline, larger than HydroBASINS, so basin
