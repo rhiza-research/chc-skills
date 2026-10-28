@@ -28,6 +28,7 @@ dev = [
     "scipy",
     "matplotlib>=3.8",
     "pillow",
+    "metpy>=1.6",
 ]
 
 [tool.uv.sources]
