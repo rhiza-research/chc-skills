@@ -1,8 +1,8 @@
 ---
 name: kmsa-wrf-fetch
-description: "Read one KMSA (Kenya Meteorological Department) WRF forecast run, the 7- to 8-day run or the 3-day daily run, at 3-hourly steps on a ~0.036° Kenya grid, as a weather-skills forecast Zarr: total precipitation and 2 m temperature. Reads the private daily mirror in gs://sheerwater-datalake/kmsa-wrf with Google Cloud service-account credentials. Use when a task needs the KMSA WRF forecast."
+description: "Private use only, requires credentials. Read one KMSA WRF forecast run, the 7- to 8-day run or the 3-day daily run, at 3-hourly steps on a ~0.036° Kenya grid, as a weather-skills forecast Zarr: total precipitation and 2 m temperature. Reads the private daily mirror in gs://sheerwater-datalake/kmsa-wrf and works only with Google Cloud service-account credentials granted read access to it. Use when a task needs the KMSA WRF forecast."
 license: MIT
-compatibility: Requires Python 3.12 and uv. Reads private GCS gs://sheerwater-datalake/kmsa-wrf via gcsfs, with NEURAL_GCM_SERVICE_CREDENTIALS (the raw service-account key JSON), GOOGLE_APPLICATION_CREDENTIALS (a key file path), or Application Default Credentials. Can also read a local copy of the archive.
+compatibility: Requires Python 3.12 and uv. Reads private GCS gs://sheerwater-datalake/kmsa-wrf via gcsfs, with GCLOUD_SERVICE_CREDENTIALS (the raw service-account key JSON), GOOGLE_APPLICATION_CREDENTIALS (a key file path), or Application Default Credentials. Can also read a local copy of the archive.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py *)
 metadata:
   catalog-group: fetchers
@@ -14,18 +14,20 @@ metadata:
   openclaw:
     requires:
       env:
-        - NEURAL_GCM_SERVICE_CREDENTIALS
-    primaryEnv: NEURAL_GCM_SERVICE_CREDENTIALS
+        - GCLOUD_SERVICE_CREDENTIALS
+    primaryEnv: GCLOUD_SERVICE_CREDENTIALS
     envVars:
-      - name: NEURAL_GCM_SERVICE_CREDENTIALS
+      - name: GCLOUD_SERVICE_CREDENTIALS
         description: Full contents of a GCP service-account key JSON with read access to gs://sheerwater-datalake/kmsa-wrf.
       - name: GOOGLE_APPLICATION_CREDENTIALS
-        description: Path to a GCP service-account JSON file with that access. Used only if NEURAL_GCM_SERVICE_CREDENTIALS is unset.
+        description: Path to a GCP service-account JSON file with that access. Used only if GCLOUD_SERVICE_CREDENTIALS is unset.
 ---
 
 # kmsa-wrf-fetch
 
 Reads one KMSA WRF run and writes its precipitation and 2 m temperature as a single-init forecast Zarr.
+
+> **Private use only. Requires credentials.** KMSA WRF output is not public data. The skill reads a private bucket and fails without a service-account key that has been granted read access to `gs://sheerwater-datalake/kmsa-wrf`. Only people authorized to use the KMSA WRF forecast may run it, and its output must not be shared or published beyond them. If credentials are not set, stop and ask the user; do not look for another copy of the data.
 
 ## Usage
 
@@ -50,7 +52,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py [--product 7day|daily] --probe-lates
 - stderr gives the run start and how far it reaches.
 
 ### Notes
-- The bucket is private. Set `NEURAL_GCM_SERVICE_CREDENTIALS` (the service-account key JSON itself) or `GOOGLE_APPLICATION_CREDENTIALS` (a key file path) in the environment on the first call, including `--probe-latest`, unless Application Default Credentials are set up. Never print the value. A local `--root` needs no credentials.
+- The bucket is private. Set `GCLOUD_SERVICE_CREDENTIALS` (the service-account key JSON itself) or `GOOGLE_APPLICATION_CREDENTIALS` (a key file path) in the environment on the first call, including `--probe-latest`, unless Application Default Credentials are set up. Never print the value. A local `--root` needs no credentials.
 - Runs are not filled. A truncated run (the model stopped early) comes back with fewer steps; check the last `step` before computing weekly totals.
 - The skill refuses archive files that are not a raw run: files whose contents start on a different day than their name, files already de-accumulated and split by day (some daily files, March–May 2024), and the July 2023 files in an older format. The error says which.
 - For daily or weekly totals, aggregate-temporal then convert-to-totals.
@@ -60,7 +62,3 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py [--product 7day|daily] --probe-lates
 uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --date 2026-10-13 --bbox 1/36/-3/38 -v tp -o wrf_7day_nairobi.zarr
 ```
 Writes 3-hourly rain rates around Nairobi from the 2026-10-13 06Z 7-day run.
-
-## Details
-
-Archive layout, the daily mirror, and the file checks: [references/REFERENCE.md](references/REFERENCE.md).
