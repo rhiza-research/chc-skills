@@ -1,6 +1,6 @@
 ---
 name: kmsa-wrf-fetch
-description: "Read one KMSA WRF forecast run, the 7- to 8-day run or the 3-day daily run, at 3-hourly steps on a ~0.036° Kenya grid, as a weather-skills forecast Zarr: total precipitation and 2 m temperature. Reads the private daily mirror in gs://sheerwater-datalake/kmsa-wrf with Google Cloud service-account credentials. Use when a task needs the KMSA WRF forecast."
+description: "Private use only, requires credentials. Read one KMSA WRF forecast run, the 7- to 8-day run or the 3-day daily run, at 3-hourly steps on a ~0.036° Kenya grid, as a weather-skills forecast Zarr: total precipitation and 2 m temperature. Reads the private daily mirror in gs://sheerwater-datalake/kmsa-wrf and works only with Google Cloud service-account credentials granted read access to it. Use when a task needs the KMSA WRF forecast."
 license: MIT
 compatibility: Requires Python 3.12 and uv. Reads private GCS gs://sheerwater-datalake/kmsa-wrf via gcsfs, with GCLOUD_SERVICE_CREDENTIALS (the raw service-account key JSON), GOOGLE_APPLICATION_CREDENTIALS (a key file path), or Application Default Credentials. Can also read a local copy of the archive.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py *)
@@ -26,6 +26,8 @@ metadata:
 # kmsa-wrf-fetch
 
 Reads one KMSA WRF run and writes its precipitation and 2 m temperature as a single-init forecast Zarr.
+
+> **Private use only. Requires credentials.** KMSA WRF output is not public data. The skill reads a private bucket and fails without a service-account key that has been granted read access to `gs://sheerwater-datalake/kmsa-wrf`. Only people authorized to use the KMSA WRF forecast may run it, and its output must not be shared or published beyond them. If credentials are not set, stop and ask the user; do not look for another copy of the data.
 
 ## Usage
 
