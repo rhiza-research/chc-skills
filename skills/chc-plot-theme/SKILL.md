@@ -41,11 +41,11 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/theme.py --colormap NAME [--window-days N | -
 KMSA-style Kenya map with county lines and the Tana basin outline:
 ```bash
 uv run ${CLAUDE_SKILL_DIR}/scripts/theme.py --theme kmsa -o kmsa_theme.json
-plot -i totals_kenya.zarr --layer outline:kenya_counties.json --layer outline:tana.json -o kenya_kmsa.png \
+plot -i totals_kenya.zarr --layer outline:kenya_counties.json=COUNTIES --layer outline:tana.json=TANA -o kenya_kmsa.png \
   --theme-file kmsa_theme.json \
   --spec '{"layout": {"title": {"text": "Rainfall 21–30 Sep 2026"}}}'
 ```
-Draws dekad totals in KMSA classes, with the theme's thin dark grey county lines (an outline with many polygons takes the theme's admin-1 style) and the basin as a heavier black line. To restyle one, its layer is `outline1`, `outline2`, … in `--layer` order: `{"data": [{"uid": "outline2", "line": {"width": 1.6}}]}`. The GeoJSON comes from resolve-chc-region.
+Draws dekad totals in KMSA classes, with the theme's thin dark grey county lines (an outline with many polygons takes the theme's admin-1 style) and the basin as a heavier black line. To restyle one, put the name given after `=` in `"uid"`: `{"data": [{"uid": "TANA", "line": {"width": 1.6}}]}`. The GeoJSON comes from resolve-chc-region.
 
 ## Details
 
