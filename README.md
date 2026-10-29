@@ -5,7 +5,8 @@ Indian Ocean Dipole (IOD) analysis, analog years, BoM IOD/ENSO observation
 graphs, CPC MJO forecast diagrams, NCICS MJO / equatorial-wave maps and
 Hovmöllers, OLR equatorial-wave filtering and the RMM MJO index computed from
 a forecast (with Hovmöller, phase-rose and phase-diagram plots), Africa ITF
-position figures, and the DWD ICON-EPS ensemble regridded from its triangular grid. Built on
+position figures, the DWD ICON-EPS ensemble regridded from its triangular grid, and
+arithmetic transforms (EFI/SOT, totals over any window, quantiles, add/subtract/multiply/divide). Built on
 [`weather-skills-core`](https://github.com/weather-skills/weather-skills-core)
 (`>=0.1.1` from PyPI).
 
@@ -31,6 +32,10 @@ position figures, and the DWD ICON-EPS ensemble regridded from its triangular gr
 | [`ecmwf-04deg-fetch`](skills/ecmwf-04deg-fetch/) | Fetch one CHC-standardized ECMWF 0.4° daily precip ensemble (101 members, 46 lead days) from the private `gs://sheerwater-datalake/ecmwf-0_4/forecast/` archive, reading only the `--bbox` chunks (zarr, concurrently). Needs Google Cloud credentials; licensed data, keep it private |
 | [`resolve-chc-region`](skills/resolve-chc-region/) | Bbox and boundary polygon for the Tana River basin, Kenya's KNSDI national outline (plus county lines), the Kenya OND briefing box, and East Africa clipped at 15°S, in the same shape as `resolve-region` |
 | [`chc-plot-theme`](skills/chc-plot-theme/) | KMSA and classic CHC plot themes (`--theme kmsa` or `chc`, JSON to save for `plot --theme-file`) and CHC/KMSA rainfall colormaps (`chc_precip_<window>`, `chc_precip_anom_<window>`, `kmsa`; `--for ZARR` picks the window), printed as JSON for a trace's `meta.palette`, plus the KMSA-style Kenya map recipe |
+| [`efi-sot`](skills/efi-sot/) | Extreme Forecast Index and upper/lower Shift of Tails of an ensemble against a model climate (reforecast samples, or an m-climate with a `quantile` dim) |
+| [`accumulate`](skills/accumulate/) | Total a variable over any window of `step` or `time`: one window (forecast days 5–18), back-to-back or rolling windows of any length, or a running total. Rates become amounts |
+| [`quantile`](skills/quantile/) | Quantiles (percentiles, terciles, deciles, any probability) over one or more dims, e.g. ensemble percentiles or climate tercile edges |
+| [`arithmetic`](skills/arithmetic/) | Add, subtract, multiply or divide two Zarrs cell by cell, or a Zarr and a constant, with unit handling (percent of normal, rate × duration) |
 
 ## Quick start
 
@@ -87,6 +92,15 @@ uv run skills/resolve-chc-region/scripts/resolve.py "Tana River basin" --geojson
 
 # CHC rainfall colormap sized to a totals Zarr's aggregation_period
 uv run skills/chc-plot-theme/scripts/theme.py --colormap chc_precip --for /tmp/totals.zarr
+
+# Forecast days 5-18 rainfall total, its ensemble percentiles, and the EFI / SOT against a
+# reforecast climate built with the same accumulate call
+uv run skills/accumulate/scripts/accumulate.py -i /tmp/fc.zarr --from "4 day" --to "18 day" -o /tmp/fc_d5-18.zarr
+uv run skills/quantile/scripts/quantile.py -i /tmp/fc_d5-18.zarr --dim number -q 0.1,0.5,0.9 -o /tmp/fc_pct.zarr
+uv run skills/efi-sot/scripts/efi_sot.py -i /tmp/fc_d5-18.zarr --climate /tmp/clim_d5-18.zarr -o /tmp/efi.zarr
+
+# Percent of normal
+uv run skills/arithmetic/scripts/arithmetic.py -i /tmp/fc_mean.zarr -i /tmp/clim_mean.zarr --op divide --units % -o /tmp/pct_normal.zarr
 ```
 
 If anomalies are not already in the input, compute them first (a climatology
