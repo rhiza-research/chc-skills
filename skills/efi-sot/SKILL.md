@@ -15,7 +15,7 @@ Compares each grid cell's forecast ensemble with the model climate for the same 
 ## Usage
 
 ```bash
-uv run ${CLAUDE_SKILL_DIR}/scripts/efi_sot.py -i FORECAST.zarr --climate CLIMATE.zarr -o OUT.zarr [-v VAR] [--climate-variable VAR] [--member-dim DIM] [--climate-dim DIM ...] [--sot both|upper|lower|none]
+uv run ${CLAUDE_SKILL_DIR}/scripts/efi_sot.py -i FORECAST.zarr --climate CLIMATE.zarr -o OUT.zarr [-v VAR] [--climate-variable VAR] [--member-dim DIM] [--climate-dim DIM ...] [--sot both|upper|lower|none] [--dry-climate Q]
 ```
 
 ### Arguments
@@ -29,24 +29,25 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/efi_sot.py -i FORECAST.zarr --climate CLIMATE
 - `--member-dim` — forecast ensemble dim. Default: `number`.
 - `--climate-dim` — climate sample dim to pool; repeat for several. Default: every climate dim the forecast's field lacks plus the climate's own member dim (e.g. `year` and `number`). Not used with a quantile climate.
 - `--sot` — which Shift of Tails to write: `both` (default), `upper`, `lower`, `none`.
+- `--dry-climate` — a quantity in the forecast's kind of units, e.g. `1 mm`. Cells (per lead) whose climate median is below it are NaN in every output: places that are usually dry for that window. Default: off. Recommended for precipitation; scale it to the window, e.g. `1 mm` for daily, a few mm for weekly totals.
 
 ### Output
 - `<var>_efi` — Extreme Forecast Index, −1 to 1, units `1`. `EFI = 2/π ∫ (p − F_f(p)) / √(p(1−p)) dp` over p = 0.01…0.99 (trapezoid), where `F_f(p)` is the share of members below the climate p-quantile (Lalaurette 2003). 0: the ensemble matches climate; ±1: every member beyond the climate's extremes.
 - `<var>_sot_upper` — `(Q_f(0.9) − Q_c(0.99)) / (Q_c(0.99) − Q_c(0.9))`. Above 0: the wettest/warmest 10% of members exceed the climate's 99th percentile.
 - `<var>_sot_lower` — `(Q_c(0.01) − Q_f(0.1)) / (Q_c(0.1) − Q_c(0.01))`. Above 0: the driest/coldest 10% fall below the climate's 1st percentile.
-- Dims: the forecast's dims without the member dim, on the cells and leads both inputs share (inner join). The forecast's `aggregation_period` is kept.
+- Dims: the forecast's dims without the member dim, on the cells and leads both inputs share (inner join). The forecast's `aggregation_period` is kept, and `dry_climate_mask` describes the mask when given.
 - SOT is NaN where the climate tail is flat (denominator ≤ 0, e.g. dry seasons where Q_c(0.9) = Q_c(0.99) = 0). EFI is NaN where all members or any climate quantile is missing.
 
 ### Notes
 - Forecast and climate must describe the same quantity over the same window: both weekly totals in mm, both daily means in °C. Climate units are converted to the forecast's (m → mm); a rate against a total exits 2, and so do differing `aggregation_period` stamps. Build matching windows with the same `accumulate` (or `aggregate-temporal`) call on both.
 - Leads must match by label: give the climate the forecast's `step` values (e.g. `lead-climatology --like`, or `planette-reforecast-fetch` for the same init). Grids must match exactly: `coarsen --reference-grid` one onto the other. No overlap exits 2.
 - A sample climate needs at least 10 values per cell; tail quantiles from fewer than ~100 are noisy.
-- Ties count as not below: where many climate quantiles are 0 (dry regions) an all-dry forecast gets a positive EFI. Read precipitation EFI together with SOT and the climate there.
-- Uses strict `<` and `linear` quantiles, matching the ECMWF-S2S4AFRICA pipeline's `efi_sot.py`.
+- Ties count as not below, so where the climate is 0 at least half the time an all-dry or drizzly forecast gets a positive EFI (the climate median is the break-even point: with fewer dry years a dry forecast gives EFI ≤ 0). `--dry-climate` masks exactly those cells; a dry forecast where it usually rains keeps its negative EFI.
+- It uses strict `<` and `linear` quantiles, matching the ECMWF-S2S4AFRICA pipeline's `efi_sot.py`.
 
 ### Example
 ```bash
 uv run ${CLAUDE_SKILL_DIR}/scripts/efi_sot.py -i ecmwf_kenya_weekly_totals.zarr \
-  --climate reforecast_kenya_weekly_totals.zarr -o ecmwf_kenya_efi.zarr
+  --climate reforecast_kenya_weekly_totals.zarr -o ecmwf_kenya_efi.zarr --dry-climate "2 mm"
 ```
-Writes weekly-rainfall EFI and upper/lower SOT per lead week over Kenya, against reforecast members pooled over years and members.
+Writes weekly-rainfall EFI and upper/lower SOT per lead week over Kenya, against reforecast members pooled over years and members, masking cells whose median climate week has under 2 mm.

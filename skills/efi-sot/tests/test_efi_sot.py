@@ -93,3 +93,36 @@ def test_usage_errors(mod, tmp_path, units, args):
     with pytest.raises(SystemExit) as exc:
         _run(mod, fc, clim, tmp_path / "e.zarr", *args)
     assert exc.value.code == 2
+
+
+def _dry_climate(tmp_path, n_dry=60, name="clim.zarr"):
+    """n_dry of 100 climate years dry, the rest 5-20 mm."""
+    samples = np.r_[np.zeros(n_dry), np.linspace(5, 20, 100 - n_dry)]
+    return _climate(tmp_path, samples=samples, name=name)
+
+
+def test_dry_climate_is_masked(mod, tmp_path):
+    fc, clim = _forecast(tmp_path, [0.3] * 5), _dry_climate(tmp_path)
+    plain = _run(mod, fc, clim, tmp_path / "p.zarr")
+    assert _cell(plain["tp_efi"]) > 0  # the artefact: drizzle reads as wet
+    res = _run(mod, fc, clim, tmp_path / "m.zarr", "--dry-climate", "1 mm")
+    for v in ("tp_efi", "tp_sot_upper", "tp_sot_lower"):
+        assert res[v].isnull().all()
+    assert "1 mm" in res["tp_efi"].attrs["dry_climate_mask"]
+
+
+def test_wet_climate_is_kept(mod, tmp_path):
+    clim = _dry_climate(tmp_path, n_dry=40)
+    fc = _forecast(tmp_path, [0.0] * 5)
+    plain = _run(mod, fc, clim, tmp_path / "p.zarr")
+    res = _run(mod, fc, clim, tmp_path / "m.zarr", "--dry-climate", "0.001 m")
+    assert _cell(res["tp_efi"]) == pytest.approx(_cell(plain["tp_efi"]), abs=1e-9)
+    assert _cell(res["tp_efi"]) < 0  # a dry week where it usually rains
+
+
+@pytest.mark.parametrize("value", ["1 day", "-1 mm", "banana"])
+def test_bad_dry_climate(mod, tmp_path, value):
+    fc, clim = _forecast(tmp_path, [1.0, 2.0]), _dry_climate(tmp_path)
+    with pytest.raises(SystemExit) as exc:
+        _run(mod, fc, clim, tmp_path / "e.zarr", "--dry-climate", value)
+    assert exc.value.code == 2

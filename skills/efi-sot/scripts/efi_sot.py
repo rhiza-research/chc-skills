@@ -10,6 +10,8 @@
 # ///
 """Extreme Forecast Index (EFI) and Shift of Tails (SOT) of an ensemble against a model climate."""
 
+import sys
+
 from weather_skills_core import Dataset, UsageError, weather_skill
 from weather_skills_core.units import AGGREGATION_PERIOD_ATTR, dequantify_dataset, ureg
 
@@ -38,6 +40,28 @@ def _pick_variable(fc, clim, variable, climate_variable):
             "pass --climate-variable"
         )
     return variable, climate_variable
+
+
+def _threshold_magnitude(text, units):
+    """--dry-climate as a number in the forecast's units."""
+    try:
+        q = ureg.Quantity(str(text).strip())
+    except Exception:  # noqa: BLE001 — pint raises several parse errors
+        raise UsageError(f"--dry-climate {text!r} is not a quantity like '1 mm'") from None
+    if units is None:
+        if not q.dimensionless:
+            raise UsageError(f"--dry-climate {text!r} has units but the forecast has none")
+        value = float(q.magnitude)
+    else:
+        try:
+            value = float(q.to(units).magnitude)
+        except Exception:  # noqa: BLE001 — DimensionalityError and friends
+            raise UsageError(
+                f"--dry-climate {text!r} cannot be expressed in the forecast's units {units}"
+            ) from None
+    if value < 0:
+        raise UsageError(f"--dry-climate {text!r} is negative")
+    return value
 
 
 def _climate_quantiles(clim, sample_dims, xr, np):
@@ -101,7 +125,14 @@ def _climate_quantiles(clim, sample_dims, xr, np):
     choices=["both", "upper", "lower", "none"],
     help="Which Shift of Tails to write. Default: both.",
 )
-def efi_sot(ds, climate, variable, climate_variable, member_dim, climate_dim, sot, **kwargs):
+@weather_skill.argument(
+    "--dry-climate",
+    help="Mask (NaN) cells whose climate median is below this ('1 mm'): usually-dry places, "
+    "where precipitation EFI is unreliable. Default: off.",
+)
+def efi_sot(
+    ds, climate, variable, climate_variable, member_dim, climate_dim, sot, dry_climate, **kwargs
+):
     """Extreme Forecast Index (EFI) and Shift of Tails (SOT) of an ensemble against a model climate."""
     import numpy as np
     import pint
@@ -132,6 +163,7 @@ def efi_sot(ds, climate, variable, climate_variable, member_dim, climate_dim, so
                 f"forecast units {fc.pint.units} and climate units {clim.pint.units} differ in "
                 "kind (a rate vs a total?); convert one first (accumulate, unit-convert)"
             ) from None
+    threshold = _threshold_magnitude(dry_climate, fc.pint.units) if dry_climate else None
     fc = dequantify_dataset(fc.to_dataset(name="v"))["v"]
     clim = dequantify_dataset(clim.to_dataset(name="v"))["v"]
 
@@ -179,11 +211,23 @@ def efi_sot(ds, climate, variable, climate_variable, member_dim, climate_dim, so
     efi = (2 / np.pi) * integrand.integrate("quantile")
     has_data = valid_member.any(member_dim) & qc.notnull().all("quantile")
     efi = efi.where(has_data)
+    keep = None
+    if threshold is not None:
+        # Where the climate is dry half the time or more, ties at 0 make a dry forecast
+        # read as wet; those cells carry no usable signal.
+        keep = qc.sel(quantile=0.5, drop=True) >= threshold
+        n_masked = int((~keep).sum())
+        print(
+            f"efi-sot: masked {n_masked} of {keep.size} cells (climate median < {dry_climate})",
+            file=sys.stderr,
+        )
 
     what = fc_ds[variable].attrs.get("long_name") or variable
     base = {}
     if period_f:
         base[AGGREGATION_PERIOD_ATTR] = period_f
+    if dry_climate:
+        base["dry_climate_mask"] = f"NaN where the climate median is below {dry_climate.strip()}"
     out = {
         f"{variable}_efi": efi.assign_attrs(
             {
@@ -226,6 +270,8 @@ def efi_sot(ds, climate, variable, climate_variable, member_dim, climate_dim, so
                 }
             )
     result = xr.Dataset(out)
+    if keep is not None:
+        result = result.where(keep)
     scalar = {c: fc_ds[c] for c in fc_ds.coords if fc_ds[c].ndim == 0 and c not in result.coords}
     return result.assign_coords(scalar)
 
