@@ -499,7 +499,11 @@ def fetch(
         license="CC BY 4.0; source: Deutscher Wetterdienst",
         regridding=(f"{regrid} from the ICON R02B07 triangular grid to {target_resolution} deg"),
     )
-    return _standardize(ds)
+    ds = _standardize(ds)
+    # Latitude runs south to north in every output.
+    if "latitude" in ds.indexes and ds.indexes["latitude"].is_monotonic_decreasing:
+        ds = ds.isel(latitude=slice(None, None, -1))
+    return ds
 
 
 if __name__ == "__main__":

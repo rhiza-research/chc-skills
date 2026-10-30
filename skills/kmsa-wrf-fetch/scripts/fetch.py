@@ -194,6 +194,9 @@ def fetch(product, root, date, bbox, variable, probe_latest, **kwargs):
     out = to_standard_units(out)
     out = precip_amounts_to_rates(out)
     out = stamp_data_interval(out)
+    # Latitude runs south to north in every output.
+    if "latitude" in out.indexes and out.indexes["latitude"].is_monotonic_decreasing:
+        out = out.isel(latitude=slice(None, None, -1))
     return out
 
 

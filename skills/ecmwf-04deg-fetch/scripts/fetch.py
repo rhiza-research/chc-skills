@@ -370,6 +370,9 @@ def fetch(date, bbox, variable, max_lead, probe_latest, **kwargs):
     )
     stamp_cf_attrs(ds)
     ds = to_standard_units(ds)
+    # Latitude runs south to north in every output.
+    if "latitude" in ds.indexes and ds.indexes["latitude"].is_monotonic_decreasing:
+        ds = ds.isel(latitude=slice(None, None, -1))
     return stamp_data_interval(ds, period="1 day")
 
 

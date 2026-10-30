@@ -410,6 +410,9 @@ def fetch(dataset, date, bbox, variable, probe_latest, **kwargs):
         for name in ds.data_vars:
             ds[name].attrs[AGGREGATION_PERIOD_ATTR] = period
             ds[name].attrs["cell_methods"] = format_cell_methods("step", "mean", interval=period)
+    # Latitude runs south to north in every output.
+    if "latitude" in ds.indexes and ds.indexes["latitude"].is_monotonic_decreasing:
+        ds = ds.isel(latitude=slice(None, None, -1))
     return ds
 
 
