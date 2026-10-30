@@ -96,18 +96,20 @@ weather-skills transforms and plotters when those are available (for example
   latitude-vs-dekad time series over fixed longitude bands (east = 20–35E,
   which excludes Kenya). stderr names the analysed dekad. Users may say ITF
   or ITCZ — same CPC product. Figure-only; no gridded data.
-- **`chc-plot-theme`**: `--theme kmsa` prints the KMSA plot theme as
-  JSON; save it to a `.json` file and pass that to `plot --theme-file` when a Kenya rainfall map should
-  look like a KMSA map (KMSA classes and legend labels for rainfall totals,
-  KMSA-style text and borders, no spec changes). `--theme chc` does the same
-  for the classic CHC map classes (fixed `ppt_total` totals, CHC anomaly,
-  percent-of-normal and SPI classes). `--colormap NAME` prints one
-  rainfall colormap as JSON (`chc_precip_daily|week|month|season`,
-  `chc_precip_anom_daily|week|month|season`, `kmsa`) for a trace's
-  `meta.palette` (the object, not just the name). Pass `--colormap
-  chc_precip` (or `chc_precip_anom`) with `--for ZARR` or `--window-days N`
-  to have the window picked (a dekad gets the week classes). Its SKILL.md has
-  the full Kenya map recipe (county lines, Tana outline).
+- **`chc-plot-theme`** prints the KMSA and CHC rainfall palettes for the
+  `plot` skill. Use it whenever a user asks for the KMSA colormap or a
+  KMSA- or CHC-style rainfall map. `-o chc_palettes.libsonnet` writes them
+  all as a Jsonnet library; run `plot` with `-J .` and, in the spec,
+  `local chc = import 'chc_palettes.libsonnet';` then
+  `ws.classBar(chc.kmsa, 'mm')` (KMSA classes with their `< 1` … `> 100`
+  legend labels). Other palettes: `chc_precip_daily|week|month|season`,
+  `chc_precip_anom_daily|week|month|season`, and the classic fixed
+  `chc_ppt_total`, `chc_ppt_poa`, `chc_spi`. `--colormap NAME` prints one
+  palette as JSON to paste into a spec; `--colormap chc_precip` (or
+  `chc_precip_anom`) with `--for ZARR` or `--window-days N` picks the window
+  (a dekad gets the week classes). Its SKILL.md has the full Kenya map
+  example (county lines, Tana outline); the `plot` skill's SKILL.md and
+  recipes cover the spec itself.
 - **`kenya-forecast-fetch`** opens one product from a Kenya forecasts init
   folder (`--dataset`, `--date`; `--probe-latest` for the newest init) and
   writes a forecast Zarr. Precip is already a rate (`mm day-1`), so do not
@@ -126,8 +128,9 @@ weather-skills transforms and plotters when those are available (for example
   totals differ from other basin products), **Kenya**'s official KNSDI
   national outline, the **Kenya OND region** briefing box (also "Kenya OND
   briefing box"), and **East Africa** clipped at 15°S.
-  `--counties-geojson` (Kenya) writes the 47 KNSDI county polygons for
-  `plot --layer outline:` county lines. Fetch over the bbox, then mask with
+  `--counties-geojson` (Kenya) writes the 47 KNSDI county polygons; give
+  them to `plot` as an input (`-i kenya_counties.json=COUNTIES`) and draw
+  `@COUNTIES.x` / `@COUNTIES.y` as lines for county lines. Fetch over the bbox, then mask with
   `clip-region --geojson`. Use it instead of `resolve-region` for the Tana
   basin (`resolve-region` has no basins and its Nominatim fallback returns an
   unrelated one) and for the Kenya boundary on Kenya maps. Single counties
