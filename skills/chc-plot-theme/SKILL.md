@@ -52,7 +52,7 @@ local outline(name, color, width) = {
     { type: 'heatmap', x: '@OBS.lon', y: '@OBS.lat', z: '@OBS.precip.isel(time=0)', coloraxis: 'coloraxis' },
     outline('COUNTIES', '#4d4d4d', 0.8),
     outline('TANA', 'black', 1.6),
-  ] + ws.basemap(bbox, layers=['lakes', 'borders', 'coastline']),
+  ] + ws.basemap(bbox, rivers=false, admin1=false),
   layout: ws.map(bbox) + ws.classBar(chc.kmsa, 'mm') + {
     font: { family: 'Arial, Helvetica, sans-serif', color: 'black' },
     title: { text: 'Rainfall 21–30 Sep 2026' },
@@ -64,7 +64,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/theme.py -o chc_palettes.libsonnet
 plot -i totals_kenya.zarr=OBS -i kenya_counties.json=COUNTIES -i tana.json=TANA \
   -J . --spec kenya_kmsa.jsonnet -o kenya_kmsa.png
 ```
-Draws the totals in KMSA classes with Arial text, thin grey county lines, a heavier basin outline, and black national borders. `layers` leaves the base map's admin-1 lines out, so they do not double the county lines. The GeoJSON comes from resolve-chc-region: `--counties-geojson kenya_counties.json` for Kenya, `--geojson tana.json` for the Tana basin.
+Draws the totals in KMSA classes with Arial text, thin grey county lines, a heavier basin outline, and black national borders. `admin1=false` leaves the base map's admin-1 lines out, so they do not double the county lines. The GeoJSON comes from resolve-chc-region: `--counties-geojson kenya_counties.json` for Kenya, `--geojson tana.json` for the Tana basin.
 
 ## Details
 
