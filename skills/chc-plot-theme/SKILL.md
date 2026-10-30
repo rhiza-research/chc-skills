@@ -32,7 +32,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/theme.py --colormap NAME [--window-days N | -
 - The theme and colormaps are for period totals or anomalies in mm, so aggregate and convert to totals before plotting.
 - With `--theme-file`, rainfall fields get the theme's classes with no spec changes. For daily or few-day totals under `--theme chc`, the CHC window classes fit better: put `--colormap chc_precip --for ZARR` in that trace's `meta.palette`.
 - With `--theme kmsa`, rainfall totals get the KMSA classes. The file also names the palette `kmsa`, so `"meta": {"palette": "kmsa"}` puts it on one trace.
-- Put the whole `--colormap` object, not its name, in a trace's `meta.palette`; `plot` has no `kmsa` or `chc_precip_*` palette of its own.
+- Put the whole `--colormap` object, not its name, in a trace's `meta.palette`; `plot` has no `kmsa` or `chc_precip_*` palette of its own. For several maps in one figure, pass the theme with `--theme-file` instead of repeating a colormap in each trace.
 - The lowest KMSA class and the near-zero CHC anomaly class are white, like masked cells; say so in a caption when the map is masked.
 - Neither carries dates; put the period in the title.
 
