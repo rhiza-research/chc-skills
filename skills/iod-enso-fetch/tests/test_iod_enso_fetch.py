@@ -319,7 +319,11 @@ def test_forecast_data_url(mod):
 
 
 def test_parse_obs_text(mod):
-    times, values = mod._parse_obs_text("20080728,20080803,0.01\n20080804,20080810,0.10\n")
+    starts, times, values = mod._parse_obs_text("20080728,20080803,0.01\n20080804,20080810,0.10\n")
+    assert list(starts) == [
+        np.datetime64("2008-07-28", "ns"),
+        np.datetime64("2008-08-04", "ns"),
+    ]
     assert list(times) == [
         np.datetime64("2008-08-03", "ns"),
         np.datetime64("2008-08-10", "ns"),
@@ -337,13 +341,19 @@ def test_obs_dataset_weekly(mod):
     assert "iod_mode_index" in ds.data_vars
     assert ds["iod_mode_index"].attrs["units"] == "degree_Celsius"
     assert float(ds["iod_mode_index"].isel(time=1)) == pytest.approx(-0.20)
-    assert ds["iod_mode_index"].attrs["data_interval"] == "7 day"
+    assert "data_interval" not in ds["iod_mode_index"].attrs
+    assert ds["time"].attrs["bounds"] == "time_bounds"
+    assert list(ds["time_bounds"].values[0]) == [
+        np.datetime64("2008-07-28", "ns"),
+        np.datetime64("2008-08-04", "ns"),
+    ]
 
 
 def test_obs_dataset_soi_daily(mod):
     ds = mod._obs_dataset("soi", "20260801,20260830,-14.6\n20260802,20260831,-14.6\n")
     assert ds["soi"].attrs["units"] == "1"
     assert ds["soi"].attrs["data_interval"] == "1 day"
+    assert "time_bounds" not in ds.coords
 
 
 def test_parse_forecast_json(mod):

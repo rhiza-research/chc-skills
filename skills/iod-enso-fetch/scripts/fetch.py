@@ -287,10 +287,11 @@ def _parse_float(raw: str) -> float:
         raise DataError(f"unrecognized BoM numeric value {raw!r}.") from exc
 
 
-def _parse_obs_text(text: str) -> tuple[np.ndarray, np.ndarray]:
-    """Parse ``start,end,value`` clim_data rows into week-end times and values."""
+def _parse_obs_text(text: str) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Parse ``start,end,value`` clim_data rows into start dates, end dates, and values."""
     if text.lstrip().startswith("<"):
         raise DataError("BoM index text download returned HTML, not CSV values.")
+    starts: list[np.datetime64] = []
     times: list[np.datetime64] = []
     values: list[float] = []
     for line_no, line in enumerate(text.splitlines(), start=1):
@@ -300,32 +301,33 @@ def _parse_obs_text(text: str) -> tuple[np.ndarray, np.ndarray]:
         parts = [p.strip() for p in row.split(",")]
         if len(parts) < 3:
             raise DataError(f"BoM index text line {line_no} is not start,end,value: {row!r}")
-        end = _parse_ymd(parts[1])
+        start, end = _parse_ymd(parts[0]), _parse_ymd(parts[1])
+        starts.append(np.datetime64(start.isoformat(), "ns"))
         times.append(np.datetime64(end.isoformat(), "ns"))
         values.append(_parse_float(parts[2]))
     if not times:
         raise DataError("BoM index text listed no values.")
-    return np.asarray(times), np.asarray(values, dtype=np.float64)
-
-
-def _obs_interval(index: str) -> str:
-    return "1 day" if index == "soi" else "7 day"
+    return np.asarray(starts), np.asarray(times), np.asarray(values, dtype=np.float64)
 
 
 def _obs_dataset(index: str, text: str) -> xr.Dataset:
     name, units, long_name = INDEX_VARS[index]
-    times, values = _parse_obs_text(text)
+    starts, times, values = _parse_obs_text(text)
     ds = xr.Dataset({name: ("time", values)}, coords={"time": times})
     ds[name].attrs.update(long_name=long_name, units=units)
-    if index != "soi":
-        ds[name].attrs["standard_name"] = "sea_surface_temperature_anomaly"
+    ds.attrs.update(Conventions="CF-1.13", weather_skills_source="bom")
     stamp_cf_coords(ds)
     if index == "soi":
         ds[name].attrs["comment"] = "30-day rolling Troup SOI; time is the window end date."
-    else:
-        ds[name].attrs["comment"] = "Weekly index; time is the week-ending date."
-    ds.attrs.update(Conventions="CF-1.13", weather_skills_source="bom")
-    return stamp_data_interval(ds, period=_obs_interval(index))
+        return stamp_data_interval(ds, period="1 day")
+    ds[name].attrs["standard_name"] = "sea_surface_temperature_anomaly"
+    ds[name].attrs["comment"] = "Weekly index; time is the week-ending date."
+    # CF bounds from each row's first and last day (Monday to Sunday), so a week split
+    # by a month edge counts in both months by its days in each.
+    ends = times + np.timedelta64(1, "D")
+    ds = ds.assign_coords(time_bounds=(("time", "nv"), np.stack([starts, ends], axis=1)))
+    ds["time"].attrs["bounds"] = "time_bounds"
+    return stamp_data_interval(ds)
 
 
 def _parse_month_label(label: str) -> date:
