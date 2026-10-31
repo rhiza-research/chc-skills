@@ -85,7 +85,7 @@ uv run skills/icon-eps-fetch/scripts/fetch.py --bbox 5.5/33.5/-5/42.5 -o /tmp/ic
 # Tana River basin bbox + polygon (for clip-region --geojson / plot masks)
 uv run skills/resolve-chc-region/scripts/resolve.py "Tana River basin" --geojson /tmp/tana.json
 
-# KMSA and CHC rainfall palettes as a Jsonnet library for plot -J
+# KMSA and CHC rainfall palettes as a Jsonnet library for plot specs
 uv run skills/chc-plot-theme/scripts/theme.py -o /tmp/chc_palettes.libsonnet
 
 # CHC rainfall palette sized to a totals Zarr's aggregation_period

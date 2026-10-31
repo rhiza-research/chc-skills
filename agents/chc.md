@@ -99,7 +99,7 @@ weather-skills transforms and plotters when those are available (for example
 - **`chc-plot-theme`** prints the KMSA and CHC rainfall palettes for the
   `plot` skill. Use it whenever a user asks for the KMSA colormap or a
   KMSA- or CHC-style rainfall map. `-o chc_palettes.libsonnet` writes them
-  all as a Jsonnet library; run `plot` with `-J .` and, in the spec,
+  all as a Jsonnet library in the working folder; in the spec,
   `local chc = import 'chc_palettes.libsonnet';` then
   `ws.classBar(chc.kmsa, 'mm')` (KMSA classes with their `< 1` … `> 100`
   legend labels). Other palettes: `chc_precip_daily|week|month|season`,

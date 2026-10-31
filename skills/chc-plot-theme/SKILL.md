@@ -20,7 +20,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/theme.py --colormap NAME [--window-days N | -
 ```
 
 ### Arguments
-- *(no `--colormap`)* — print every palette as a Jsonnet library. Save it as `chc_palettes.libsonnet` in your working directory, pass that directory to `plot` with `-J .`, and import it in the spec: `local chc = import 'chc_palettes.libsonnet';`, then `ws.classBar(chc.kmsa, 'mm')`.
+- *(no `--colormap`)* — print every palette as a Jsonnet library. Save it as `chc_palettes.libsonnet` in your working directory and import it in the spec: `local chc = import 'chc_palettes.libsonnet';`, then `ws.classBar(chc.kmsa, 'mm')`.
 - `--colormap` — print only this palette as JSON: `kmsa`, `chc_precip_daily` / `_week` / `_month` / `_season`, `chc_precip_anom_*` (same windows), `chc_ppt_total`, `chc_ppt_poa`, `chc_spi`, or the family `chc_precip` / `chc_precip_anom` with `--window-days` or `--for` to pick the window. JSON is Jsonnet, so the object can go straight into a spec (`ws.classBar($PAL, 'mm')`) or be saved as a `.json` file and imported. Classes are listed under Details.
 - `--window-days` — window length in days; only with a family name: under 2 → `daily`, up to 10 (a week or dekad) → `week`, under 40 → `month`, longer → `season`. stderr names the choice.
 - `--for` — Zarr you will plot, only with a family name; the window comes from its data variables' `aggregation_period`. Exits 2 unless exactly one period is found. `--window-days` wins when both are given.
@@ -62,7 +62,7 @@ local outline(name, color, width) = {
 ```bash
 uv run ${CLAUDE_SKILL_DIR}/scripts/theme.py -o chc_palettes.libsonnet
 plot -i totals_kenya.zarr=OBS -i kenya_counties.json=COUNTIES -i tana.json=TANA \
-  -J . --spec kenya_kmsa.jsonnet -o kenya_kmsa.png
+  --spec kenya_kmsa.jsonnet -o kenya_kmsa.png
 ```
 Draws the totals in KMSA classes with Arial text, thin grey county lines, a heavier basin outline, and black national borders. `admin1=false` leaves the base map's admin-1 lines out, so they do not double the county lines. The GeoJSON comes from resolve-chc-region: `--counties-geojson kenya_counties.json` for Kenya, `--geojson tana.json` for the Tana basin.
 
