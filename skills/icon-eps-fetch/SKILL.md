@@ -67,4 +67,4 @@ Writes daily ICON-EPS precip rates for the coming week over Kenya from the newes
 
 ## Details
 
-**Weekly totals and maps.** The output is a standard forecast Zarr, so the usual chain applies: `aggregate-temporal --period "7 day"`, then `convert-to-totals`, then `summarize-dim --dim number --method mean` (or `exceedance-probability` on the totals with members kept), then `plot` or `plot-compare-forecasts`. For a KMSA-style Kenya map use `chc-plot-theme --theme kmsa` and the outline from `resolve-chc-region`.
+**Weekly totals and maps.** The output is a standard forecast Zarr, so the usual chain applies: `aggregate-temporal --period "7 day"`, then `convert-to-totals`, then `summarize-dim --dim number --method mean` (or `exceedance-probability` on the totals with members kept), then `plot` or `plot-compare-forecasts`. For a KMSA-style Kenya map use the `kmsa` palette from `chc-plot-theme` and the outline from `resolve-chc-region`.
