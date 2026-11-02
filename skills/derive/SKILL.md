@@ -1,6 +1,6 @@
 ---
 name: derive
-description: "Compute a new weather field from existing ones with MetPy (metpy.calc): relative humidity, dewpoint or specific humidity from each other, heat index, apparent temperature, wind chill, wet-bulb and potential temperatures, wind speed/direction or u/v components, vorticity, divergence, deformation, advection, geostrophic wind, frontogenesis, Q-vectors, gradients and smoothing. Works on forecasts (every member, step and level), reanalysis and station data. Use whenever a question needs a quantity the data does not hold directly but MetPy can calculate from it, e.g. 'how humid', 'how hot does it feel', 'where is air converging'."
+description: "Compute a new weather field from existing ones with MetPy (metpy.calc): relative humidity, dewpoint or specific humidity from each other, heat index, apparent temperature, wind chill, wet-bulb and potential temperatures, u/v components from speed and direction, vorticity, divergence, deformation, advection, geostrophic wind, frontogenesis, Q-vectors, gradients and smoothing. Works on forecasts (every member, step and level), reanalysis and station data. Use whenever a question needs a quantity the data does not hold directly but MetPy can calculate from it, e.g. 'how humid', 'how hot does it feel', 'where is air converging'. For wind speed and direction from u/v, use wind-speed-direction instead."
 license: MIT
 compatibility: Requires Python 3.12 and uv.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/derive.py *)
@@ -39,7 +39,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/derive.py --list-functions
 | How hot does it feel? | `heat_index` (hot and humid), `apparent_temperature` (adds wind), `windchill` (cold and windy) | t2m, RH (and wind speed) |
 | Heat stress on people | `wet_bulb_temperature` | pressure, t2m, d2m |
 | Air-mass and instability ingredients | `potential_temperature`, `equivalent_potential_temperature`, `virtual_temperature`, `moist_static_energy` | |
-| How strong / from where does the wind blow? | `wind_speed`, `wind_direction` (`--arg convention=to` for the heading) | u, v |
+| How strong / from where does the wind blow? | Use the **wind-speed-direction** skill: speed, from- and to-direction in one call | u, v |
 | u/v from speed and direction (stations) | `wind_components` → `u`, `v` | speed, direction |
 | Where is air converging (rain) or diverging aloft? | `divergence` | u, v grid |
 | Rotation: cyclones, troughs, vortices | `vorticity`, `absolute_vorticity`, `curvature_vorticity`, `shear_vorticity` | u, v grid |
