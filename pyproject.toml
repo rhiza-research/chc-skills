@@ -30,6 +30,7 @@ dev = [
     "pillow",
     "metpy>=1.6",
     "pyproj",
+    "requests",
 ]
 
 [tool.uv.sources]
