@@ -1,4 +1,4 @@
-"""Tests for derive: MetPy calculations on forecast, level and station envelopes."""
+"""Tests for derive-metpy: MetPy calculations on forecast, level and station envelopes."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from conftest import load_skill, make_forecast, make_point_obs, run_skill, write
 
 @pytest.fixture
 def mod():
-    return load_skill("derive", "derive")
+    return load_skill("derive-metpy", "derive_metpy")
 
 
 def _surface_forecast(t=30.0, td=20.0):
@@ -43,6 +43,7 @@ def test_relative_humidity_matched_from_names(mod, tmp_path, capsys):
     assert rh.attrs["units"] == "%"
     assert rh.attrs["standard_name"] == "relative_humidity"
     assert "metpy.calc.relative_humidity_from_dewpoint" in rh.attrs["comment"]
+    assert result.attrs["metpy_version"]
     np.testing.assert_allclose(rh.values, _magnus_rh(30.0, 20.0), rtol=5e-3)
 
 

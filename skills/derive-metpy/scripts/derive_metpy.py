@@ -525,7 +525,7 @@ def _to_output(result, name: str, calc: Calc, index: int, provenance: str) -> xr
     return out
 
 
-@weather_skill(name="derive", version=_SKILL_VERSION)
+@weather_skill(name="derive-metpy", version=_SKILL_VERSION)
 @weather_skill.argument(
     "-i",
     "--input",
@@ -560,7 +560,7 @@ def _to_output(result, name: str, calc: Calc, index: int, provenance: str) -> xr
 @weather_skill.argument(
     "--keep-inputs",
     action="store_true",
-    help="Also write the input variables, so the output can feed the next derive.",
+    help="Also write the input variables, so the output can feed the next derive-metpy.",
 )
 @weather_skill.argument(
     "--list-functions",
@@ -619,7 +619,7 @@ def derive(ds, function, arg, name, keep_inputs, list_functions, **kwargs):
     mapping = ", ".join(
         f"{p}={sources[p]}" for p in (*calc.required, *calc.optional) if p in sources
     )
-    print(f"derive: metpy.calc.{function}({mapping})", file=sys.stderr)
+    print(f"derive-metpy: metpy.calc.{function}({mapping})", file=sys.stderr)
 
     func = getattr(mpcalc, function)
     positional = [values[p] for p in calc.required]
@@ -656,6 +656,8 @@ def derive(ds, function, arg, name, keep_inputs, list_functions, **kwargs):
         out[n] = field
     out.attrs = dict(merged.attrs)
     out.attrs.setdefault("Conventions", "CF-1.13")
+    # Machine-readable backend version: the skill pins metpy>=1.6, not one release.
+    out.attrs["metpy_version"] = metpy.__version__
     return out
 
 
