@@ -23,7 +23,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/plot_skewt_metpy.py -i LEVELS.zarr [-i SURFAC
 ### Arguments
 - `--input`, `-i` — Zarr with temperature and a moisture field (dewpoint, `q` or `r`) on pressure levels. Repeat to add surface fields (`sp`, `t2m`, `d2m`) or winds (`u`, `v`) and heights (`gh` or `z`) from another store. Same inputs and matching as `sounding-indices-metpy`.
 - `--lat`, `--lon` — the grid cell nearest this point. Required for gridded input.
-- `--station` — the `point_id` to plot, for station profiles.
+- `--station` — the station id (`point_id` or `station_id`) to plot, for station profiles.
 - `--isel DIM=INDEX` — pick one position along any other dim with several values, repeatable: `--isel step=2`, `--isel time=0`. Every dim except pressure and ensemble members must end up with one value.
 - `--var ROLE=NAME` — use `NAME` for a role when matching fails or is ambiguous (roles as in `sounding-indices-metpy`).
 - `--no-hodograph` — leave out the hodograph.

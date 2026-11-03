@@ -110,11 +110,12 @@ def _select(ds: xr.Dataset, lat, lon, station, isel: list[str], member_dim, vdim
     """Reduce ``ds`` to one profile (plus the member dim)."""
     picked = []
     if station is not None:
-        if "point_id" not in ds.dims:
-            raise UsageError("--station needs station data with a point_id dim")
-        if station not in ds["point_id"].values:
+        sdim = next((d for d in names_for("point_id") if d in ds.dims), None)
+        if sdim is None:
+            raise UsageError("--station needs station data with a point_id or station_id dim")
+        if station not in ds[sdim].values:
             raise UsageError(f"--station {station!r} not in the input")
-        ds = ds.sel(point_id=station)
+        ds = ds.sel({sdim: station})
         picked.append(f"station {station}")
     else:
         try:
@@ -183,7 +184,9 @@ def _when(ds: xr.Dataset) -> str:
 )
 @weather_skill.argument("--lat", type=float, help="Latitude of the grid cell to plot (nearest).")
 @weather_skill.argument("--lon", type=float, help="Longitude of the grid cell to plot (nearest).")
-@weather_skill.argument("--station", help="point_id of the station profile to plot.")
+@weather_skill.argument(
+    "--station", help="Station id (point_id / station_id) of the profile to plot."
+)
 @weather_skill.argument(
     "--isel",
     action="append",
