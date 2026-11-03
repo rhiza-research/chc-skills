@@ -25,6 +25,7 @@ position figures, and the DWD ICON-EPS ensemble regridded from its triangular gr
 | [`plot-wave-phase`](skills/plot-wave-phase/) | Local wave phase at one longitude (default Kenya, 37.5E): weekly or daily phase roses |
 | [`mjo-rmm-index`](skills/mjo-rmm-index/) | Wheeler–Hendon RMM1/RMM2, amplitude and phase for every member, from forecast OLR and u850/u200 with ERA5 EOFs rotated onto BoM's RMM |
 | [`plot-rmm-phase`](skills/plot-rmm-phase/) | RMM phase-space diagram of `mjo-rmm-index` output: members on chosen days, ensemble-mean track, observed and BoM tracks |
+| [`plot-meteogram`](skills/plot-meteogram/) | Probabilistic meteogram for one city or point from any ensemble forecast (after milankl/prob_meteogram): a cloud bar split into low/mid/high, rain/snow drops shaded by likelihood, a 2 m temperature fan and windsocks, in local time |
 | [`africa-itf`](skills/africa-itf/) | Fetch the latest NOAA/CPC Africa ITF / ITCZ figure: the continental position map (`--location africa`, default) or the west/east latitude-vs-dekad time series (`west-africa`, `east-africa`, not maps; CPC uses both terms) |
 | [`kenya-forecast-fetch`](skills/kenya-forecast-fetch/) | Fetch a published KMSA / Rhiza Kenya forecast grid for one init: native ECMWF S2S precip (~1.5°, 101 members), its ~0.05° weekly and daily downscales, S2S temperatures, humidity and winds, medium-range precip, or GEFS. No credentials |
 | [`icon-eps-fetch`](skills/icon-eps-fetch/) | Fetch the newest DWD ICON-EPS global run (40 members, to 7.5 days: precip, 2 m temperature/dewpoint/humidity, 10 m winds and gusts, cloud cover, surface pressure), regridded from ICON's triangular grid to a regular lat/lon grid. No credentials; DWD keeps only ~24 h of runs |
@@ -75,6 +76,7 @@ uv run skills/plot-wave-hovmoller/scripts/plot_wave_hovmoller.py -i /tmp/waves.z
 uv run skills/plot-wave-phase/scripts/plot_wave_phase.py -i /tmp/waves.zarr --wave kelvin --kind rose --label Kenya -o /tmp/rose.png
 uv run skills/mjo-rmm-index/scripts/mjo_rmm_index.py --olr /tmp/olr.zarr --wind /tmp/u.zarr -o /tmp/rmm.zarr
 uv run skills/plot-rmm-phase/scripts/plot_rmm_phase.py -i /tmp/rmm.zarr -o /tmp/rmm.png
+uv run skills/plot-meteogram/scripts/plot_meteogram.py -i /tmp/ifs_nairobi.zarr --lat -1.29 --lon 36.82 --label Nairobi -o /tmp/meteogram.png
 
 # Latest CPC Africa ITF position map (default --location africa; the only map)
 uv run skills/africa-itf/scripts/fetch.py -o /tmp/itf_africa.png

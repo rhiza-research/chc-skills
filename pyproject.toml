@@ -28,6 +28,8 @@ dev = [
     "scipy",
     "matplotlib>=3.8",
     "pillow",
+    "timezonefinder>=6",
+    "tzdata>=2026.5",
 ]
 
 [tool.uv.sources]
