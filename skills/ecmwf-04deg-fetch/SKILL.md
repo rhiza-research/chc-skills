@@ -7,7 +7,7 @@ allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py *)
 metadata:
   catalog-group: fetchers
   variables:
-    - tp
+    - precip
   openclaw:
     requires:
       env:
@@ -29,7 +29,7 @@ Opens one archived CHC 0.4 degree forecast, `gs://sheerwater-datalake/ecmwf-0_4/
 ## Usage
 
 ```bash
-uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py [--date YYYY-MM-DD] [--bbox N/W/S/E] [--max-lead 46D] [-v tp] -o OUT.zarr
+uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py [--date YYYY-MM-DD] [--bbox N/W/S/E] [--max-lead 46D] [-v precip] -o OUT.zarr
 # Newest archived init date (no download)
 uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --probe-latest
 ```
@@ -37,14 +37,14 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --probe-latest
 ### Arguments
 - `--date` — init date. Default: the newest archived init. CHC posts init X at ~21 UTC on day X, and the archive copies it at ~03 UTC on X+1.
 - `--bbox` — `N/W/S/E` decimal degrees. Omit for the whole file (60S-60N, every longitude). A bbox crossing the antimeridian (W > E) is supported.
-- `--variable`, `-v` — `tp` only (daily precipitation; `pr` and `precip` are accepted). Default `tp`. Anything else exits 2.
+- `--variable`, `-v` — `precip` only (daily precipitation; `tp` and `pr` are accepted). Default `precip`. Anything else exits 2.
 - `--max-lead` — keep the lead days whose 24 h interval ends by this lead (pandas timedelta: `14D`, `336h`). Default `46D`, the whole forecast. Must be whole days.
 - `--probe-latest [IDENT]` — print the newest archived init date on stdout and exit. `IDENT` is ignored.
 - `--output`, `-o` — output Zarr, overwritten.
 
 ### Output
 - Dims `(number, step, latitude, longitude)`: 101 members numbered 0–100 (0 is the control), latitude descending, longitude `[-180, 180)`, 0.4 degree spacing. Scalar `time` is the init (00 UTC), `valid_time = time + step`.
-- `tp` is a rate in `mm day-1`: `step = N days` is the rain of the 24 h starting at init + N days (labelled at the interval start), `data_interval = 1 day`.
+- `precip` is a rate in `mm day-1`: `step = N days` is the rain of the 24 h starting at init + N days (labelled at the interval start), `data_interval = 1 day`.
 - `weather_skills_source = sheerwater-ecmwf-0_4:<YYYYMMDD>`; the `license` attr marks the data as licensed and private.
 
 ### Notes

@@ -25,12 +25,12 @@
 #   Delaunay triangulation of the cell centres (`--regrid linear`), or the nearest cell
 #   (`--regrid nearest`). Targets outside the triangulation (poles) take the nearest cell.
 # - Variable names: DWD folder names map to the cfgrib-style short names below
-#   (tot_prec -> tp, t_2m -> t2m, ...); the decoded GRIB name is replaced by that token.
+#   (tot_prec -> precip, t_2m -> t2m, ...); the decoded GRIB name is replaced by that token.
 # - Units: GRIB `**` exponents are respelled (`kg m**-2` -> `kg m-2`, same unit).
-#   `tp` (kg m-2 accumulated since init) becomes a `mm day-1` rate over [step, next step)
+#   `precip` (kg m-2 accumulated since init) becomes a `mm day-1` rate over [step, next step)
 #   by deaccumulation, labelled at the interval start; the last lead is dropped.
 #   `t2m`, `d2m` K -> degree_Celsius; `sp` Pa -> hPa (core standard units).
-# - long_name `Total precipitation` on `tp`.
+# - long_name `Total precipitation` on `precip`.
 
 import bz2
 import re
@@ -64,7 +64,7 @@ _RETRIES = 4
 
 # `-v` token -> DWD folder name. Most used first.
 VARIABLES: dict[str, str] = {
-    "tp": "tot_prec",
+    "precip": "tot_prec",
     "t2m": "t_2m",
     "d2m": "td_2m",
     "r2": "relhum_2m",
@@ -74,14 +74,16 @@ VARIABLES: dict[str, str] = {
     "tcc": "clct",
     "sp": "ps",
 }
-DEFAULT_VARIABLES = ["tp"]
+DEFAULT_VARIABLES = ["precip"]
 _DEWPOINT = frozenset({"d2m"})
-_LONG_NAMES = {"tp": "Total precipitation"}
+_LONG_NAMES = {"precip": "Total precipitation"}
 
 
 def _canonical_name(token: str) -> str | None:
     if token in VARIABLES:
         return token
+    if token == "tp":
+        return "precip"
     for short, folder in VARIABLES.items():
         if token == folder:
             return short
@@ -316,7 +318,7 @@ def _to_celsius(da):
 
 
 def _standardize(ds):
-    """CF attrs + standard units; deaccumulate `tp` into rates."""
+    """CF attrs + standard units; deaccumulate `precip` into rates."""
     normalize_unit_strings(ds)
     stamp_cf_attrs(ds)
     for name, long_name in _LONG_NAMES.items():
@@ -354,8 +356,9 @@ def _standardize(ds):
     "-v",
     action="append",
     help=(
-        "Field to retrieve (repeatable). Most used first: tp, t2m, d2m, r2, u10, v10, fg10, "
-        "tcc, sp. DWD folder names (tot_prec, t_2m, ...) are accepted. Default tp."
+        "Field to retrieve (repeatable). Most used first: precip, t2m, d2m, r2, u10, v10, "
+        "fg10, tcc, sp. `tp` and DWD folder names (tot_prec, t_2m, ...) are accepted. "
+        "Default precip."
     ),
 )
 @weather_skill.argument(
@@ -466,7 +469,7 @@ def fetch(
                 else (_published(run, folder).get(init, []))
             )
             steps = _choose_steps(available, lead, interval)
-            if len(steps) < (2 if name == "tp" else 1):
+            if len(steps) < (2 if name == "precip" else 1):
                 raise DataError(
                     f"{folder}: too few leads for init {init} (have {available[:5]}...); "
                     "lower --step-interval or wait for the run to finish uploading."
@@ -487,9 +490,9 @@ def fetch(
             fields[name] = xr.concat(parts, dim="step")
 
     ds = xr.Dataset(fields).transpose("number", "step", "latitude", "longitude")
-    if "tp" in ds.data_vars:
+    if "precip" in ds.data_vars:
         # Accumulation is zero at the init by definition (the 0 h file can be empty).
-        ds["tp"] = ds["tp"].where(ds["step"] != np.timedelta64(0, "ns"), 0.0)
+        ds["precip"] = ds["precip"].where(ds["step"] != np.timedelta64(0, "ns"), 0.0)
     ds = ds.assign_coords(time=init_time)
     ds = ds.assign_coords(valid_time=("step", init_time + ds["step"].values))
     ds.attrs.update(

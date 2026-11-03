@@ -373,8 +373,13 @@ def fetch(dataset, date, bbox, variable, probe_latest, **kwargs):
         ds = _prepare_downscaled(ds)
     elif dataset == "precip_downscaled_daily":
         ds = _prepare_daily_downscaled(ds, iso)
+    # Precip products store rainfall as ``tp``; write it as ``precip``.
+    if dataset in _PRECIP_DATASETS and "tp" in ds.data_vars:
+        ds = ds.rename({"tp": "precip"})
 
     if variable:
+        # ``-v tp`` selects ``precip``.
+        variable = ["precip" if v == "tp" and "precip" in ds.data_vars else v for v in variable]
         missing = [v for v in variable if v not in ds.data_vars]
         if missing:
             raise UsageError(

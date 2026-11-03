@@ -32,7 +32,7 @@ Reads one KMSA WRF run and writes its precipitation and 2 m temperature as a sin
 ## Usage
 
 ```bash
-uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --date YYYY-MM-DD [--product 7day|daily] [--bbox N/W/S/E] [-v tp|t2m ...] [--root GS_OR_DIR] -o OUT.zarr
+uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --date YYYY-MM-DD [--product 7day|daily] [--bbox N/W/S/E] [-v precip|t2m ...] [--root GS_OR_DIR] -o OUT.zarr
 uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py [--product 7day|daily] --probe-latest
 ```
 
@@ -40,14 +40,14 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py [--product 7day|daily] --probe-lates
 - `--date` — run start date, as in the archive filename. Required unless probing.
 - `--product` — `7day` (default): the long run, 7 days (57 steps) until April 2026, 8 days (65 steps) after. `daily`: the 3-day run (26 steps).
 - `--bbox` — `N/W/S/E`. Default: the whole WRF domain (5.6°S–6.2°N, 32.7–43.1°E).
-- `--variable`, `-v` — `tp` (total precipitation) or `t2m` (2 m temperature); repeat for both. Default: both.
+- `--variable`, `-v` — `precip` (total precipitation; `tp` is accepted) or `t2m` (2 m temperature); repeat for both. Default: both.
 - `--root` — `gs://` prefix or local folder holding `7_day/` and `Daily_Data/`. Default: `gs://sheerwater-datalake/kmsa-wrf`.
 - `--probe-latest` — print the latest run start date for `--product` (or `none`) and exit, no `-o`.
 - `--output`, `-o` — output Zarr.
 
 ### Output
 - Dims `(step, latitude, longitude)`, 3-hourly `step` from 0, scalar `time` = run start: 06Z for `7day`, 03Z for `daily`.
-- `tp` is a `mm day-1` rate per 3-hour step, de-accumulated from WRF's running total (`rainc` + `rainnc`); `step = 0` is the first 3 hours. Do not run deaccumulate after this skill.
+- `precip` is a `mm day-1` rate per 3-hour step, de-accumulated from WRF's running total (`rainc` + `rainnc`); `step = 0` is the first 3 hours. Do not run deaccumulate after this skill.
 - `t2m` is instantaneous 2 m temperature in `degree_Celsius`, on the same `step` labels (the value at each step's start).
 - stderr gives the run start and how far it reaches.
 
@@ -59,6 +59,6 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py [--product 7day|daily] --probe-lates
 
 ### Example
 ```bash
-uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --date 2026-10-13 --bbox 1/36/-3/38 -v tp -o wrf_7day_nairobi.zarr
+uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --date 2026-10-13 --bbox 1/36/-3/38 -v precip -o wrf_7day_nairobi.zarr
 ```
 Writes 3-hourly rain rates around Nairobi from the 2026-10-13 06Z 7-day run.

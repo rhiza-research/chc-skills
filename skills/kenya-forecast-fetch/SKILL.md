@@ -7,7 +7,7 @@ allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py *)
 metadata:
   catalog-group: fetchers
   variables:
-    - tp
+    - precip
     - t2m
     - d2m
     - cape
@@ -27,12 +27,12 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --probe-latest [ID]
 ```
 
 **Dataset ids** (variables; members on `number`):
-- `precip` — native S2S `tp`, daily, ~1.5°, 101 members.
-- `precip_downscaled` — `tp`, weekly, ~0.05° over 33–42°E 5°S–6°N, 101 members (inits from 2026-09-07; earlier inits have one field).
-- `precip_downscaled_daily` — `tp`, daily, ~0.05° over 27–43°E 7.5°S–7.5°N, ensemble mean only.
+- `precip` — `precip`, native S2S (`tp` in the archive), daily, ~1.5°, 101 members.
+- `precip_downscaled` — `precip`, weekly, ~0.05° over 33–42°E 5°S–6°N, 101 members (inits from 2026-09-07; earlier inits have one field).
+- `precip_downscaled_daily` — `precip`, daily, ~0.05° over 27–43°E 7.5°S–7.5°N, ensemble mean only.
 - `daily_vars` — `t2m`, `d2m`, `cape`, `tcw` daily means. `Tminmax` — `mn2t6`, `mx2t6`.
 - `10wind` — `u10`, `v10`. `500wind` — `w`. `700wind` — `u`, `v`.
-- `medium_range_precip` — `tp`, weekly. `gefs` — `tp`, daily.
+- `medium_range_precip` — `precip`, weekly. `gefs` — `precip`, daily.
 
 ### Arguments
 - `--dataset` — id from the list. Default: `precip`.
@@ -44,7 +44,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --probe-latest [ID]
 
 ### Output
 - Dims `(step, [number,] latitude, longitude)` with scalar `time` = init. Longitude is `[-180, 180)`.
-- Precip is a rate in `mm day-1`; air temperature in `degree_Celsius`; `tcw` (total column water) stays `kg m-2`.
+- Rainfall is written as `precip` (the archive stores it as `tp`, which `-v` also accepts), a rate in `mm day-1`; air temperature in `degree_Celsius`; `tcw` (total column water) stays `kg m-2`.
 - Precip, `gefs`, `daily_vars` and `medium_range_precip` steps are interval starts: `step = 0` is `[init, init + 1 period)`. Winds and `Tminmax` keep the archive steps (`Tminmax`: 6-hour min/max ending at each step, every 12 h from 6 h).
 - `precip_downscaled` and `medium_range_precip` carry `aggregation_period` (one week), so they are ready for period totals without weekly aggregation.
 
@@ -57,7 +57,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --probe-latest [ID]
 ### Example
 ```bash
 uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --dataset precip_downscaled --date 2026-10-12 \
-  --bbox 5.5/33.5/-5/42.5 -o kenya_tp_downscaled.zarr
+  --bbox 5.5/33.5/-5/42.5 -o kenya_precip_downscaled.zarr
 ```
 Writes 101-member weekly precip rates at ~0.05° over Kenya for the 2026-10-12 init.
 

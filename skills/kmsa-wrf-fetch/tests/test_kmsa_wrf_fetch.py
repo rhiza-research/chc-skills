@@ -55,9 +55,9 @@ def test_7day_run_becomes_rates_and_celsius(tmp_path, fetch_mod):
         assert ds["time"].values == np.datetime64("2026-10-13T06:00", "ns")
         assert ds.sizes["step"] == 4  # de-accumulation drops the last time
         assert ds["step"].values[0] == np.timedelta64(0, "ns")
-        assert ds["tp"].attrs["units"] == "mm day-1"
+        assert ds["precip"].attrs["units"] == "mm day-1"
         # 0.75 mm per 3 hours → 6 mm day-1
-        np.testing.assert_allclose(ds["tp"].values, 6.0, rtol=1e-5)
+        np.testing.assert_allclose(ds["precip"].values, 6.0, rtol=1e-5)
         assert ds["t2m"].attrs["units"] == "degree_Celsius"
         np.testing.assert_allclose(ds["t2m"].values, 295.0 - 273.15, rtol=1e-5)
         assert ds.attrs["weather_skills_source"] == "kmsa-wrf:7_day/20261013_to_20261020_fcst.nc"
@@ -71,13 +71,27 @@ def test_daily_product_variable_and_bbox(tmp_path, fetch_mod):
     run_skill(
         fetch_mod.fetch,
         *("--root", str(tmp_path), "--product", "daily", "--date", "2026-10-14"),
-        *("--bbox", "-0.75/36.25/-1.25/37.25", "-v", "tp", "-o", str(out)),
+        *("--bbox", "-0.75/36.25/-1.25/37.25", "-v", "precip", "-o", str(out)),
     )
 
     with xr.open_zarr(out, consolidated=True) as ds:
-        assert list(ds.data_vars) == ["tp"]
+        assert list(ds.data_vars) == ["precip"]
         assert ds["latitude"].values.tolist() == [-1.0]
         assert ds["longitude"].values.tolist() == [36.5, 37.0]
+
+
+def test_tp_is_an_alias_for_precip(tmp_path, fetch_mod):
+    write_run(tmp_path / "7_day/20261013_to_20261020_fcst.nc", "2026-10-13T06")
+    out = tmp_path / "wrf.zarr"
+
+    run_skill(
+        fetch_mod.fetch,
+        *("--root", str(tmp_path), "--date", "2026-10-13", "-v", "tp", "-v", "precip"),
+        *("-o", str(out)),
+    )
+
+    with xr.open_zarr(out, consolidated=True) as ds:
+        assert list(ds.data_vars) == ["precip"]
 
 
 def test_probe_latest(tmp_path, fetch_mod, capsys):

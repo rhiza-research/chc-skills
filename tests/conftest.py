@@ -49,7 +49,7 @@ def make_forecast(
     n_step=3,
     lats=(1.0, 2.0),
     lons=(10.0, 11.0),
-    name="tp",
+    name="precip",
     fill=1.0,
     init="2026-01-01",
     members=None,
