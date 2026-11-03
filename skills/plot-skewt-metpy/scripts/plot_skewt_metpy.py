@@ -369,7 +369,10 @@ def plot_skewt(ds, lat, lon, station, isel, var, no_hodograph, title, output, **
             v = np.nanmean(xr.DataArray(v, dims=prof[v_name].dims).transpose(member_dim, vdim), 0)
         above = p_lev < surface if surface is not None else np.ones_like(p_lev, dtype=bool)
         inside = above & (p_lev > 100)  # a barb at the top edge would stick out of the frame
-        skew.plot_barbs(p_lev[inside], u[inside], v[inside], length=6)
+        idx = np.flatnonzero(inside & np.isfinite(u) & np.isfinite(v))
+        # At most ~30 barbs: a sounding gridded every 10 hPa would otherwise be a solid column.
+        idx = idx[:: max(1, int(np.ceil(idx.size / 30)))]
+        skew.plot_barbs(p_lev[idx], u[idx], v[idx], length=6)
         z_name = _match(prof, "height", vdim, given)
         geo = None if z_name else _match(prof, "geopotential", vdim, given)
         if not no_hodograph and (z_name or geo):
