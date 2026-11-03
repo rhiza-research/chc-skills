@@ -7,6 +7,7 @@
 #   "netcdf4",
 #   "numpy",
 #   "xarray",
+#   "zarr",
 # ]
 # ///
 """Read a KMSA WRF forecast run (7-day or daily) from the NWP archive as a weather-skills Zarr."""
@@ -32,13 +33,13 @@ from weather_skills_core.units import (
 _SKILL_VERSION = "0.0.2"
 
 # Daily mirror of /home/nwp1/LIBS2/{7_day,Daily_Data} on the KMSA NWP workstation, plus
-# full_wrf/: whole WRF output files for single runs.
+# full_wrf/: whole WRF output files for single runs, as Zarr chunked by variable and time.
 _DEFAULT_ROOT = "gs://sheerwater-datalake/kmsa-wrf"
 # --product → archive folder under the root.
 _PRODUCTS = {"7day": "7_day", "daily": "Daily_Data", "full": "full_wrf"}
 # --product → file name pattern; group 1 is the YYYYMMDD run start date.
 _RUN_RE = re.compile(r"^(\d{8})_to_(\d{8})_fcst\.nc$")
-_FILE_RES = {"7day": _RUN_RE, "daily": _RUN_RE, "full": re.compile(r"^wrf_full_(\d{8})\.nc$")}
+_FILE_RES = {"7day": _RUN_RE, "daily": _RUN_RE, "full": re.compile(r"^wrf_full_(\d{8})\.zarr$")}
 
 
 @weather_skill(name="kmsa-wrf-fetch", version=_SKILL_VERSION)
@@ -48,7 +49,7 @@ _FILE_RES = {"7day": _RUN_RE, "daily": _RUN_RE, "full": re.compile(r"^wrf_full_(
     choices=list(_PRODUCTS),
     help=(
         "7day: the 7- to 8-day run (7_day/); daily: the 3-day run (Daily_Data/); full: every "
-        "WRF output field of a run (full_wrf/wrf_full_YYYYMMDD.nc). Default 7day."
+        "WRF output field of a run (full_wrf/wrf_full_YYYYMMDD.zarr). Default 7day."
     ),
 )
 @weather_skill.argument(
@@ -71,12 +72,18 @@ _FILE_RES = {"7day": _RUN_RE, "daily": _RUN_RE, "full": re.compile(r"^wrf_full_(
     ),
 )
 @weather_skill.argument(
+    "--list-variables",
+    action="store_true",
+    probe=True,
+    help="Print the run's variables (name, dims, description) for --date and exit.",
+)
+@weather_skill.argument(
     "--probe-latest",
     action="store_true",
     probe=True,
     help="Print the latest run start date in the archive (YYYY-MM-DD, or none) and exit.",
 )
-def fetch(product, root, date, bbox, variable, probe_latest, **kwargs):
+def fetch(product, root, date, bbox, variable, list_variables, probe_latest, **kwargs):
     """Read a KMSA WRF forecast run (7-day or daily) from the NWP archive as a weather-skills Zarr."""
     import numpy as np
     import xarray as xr
@@ -129,14 +136,19 @@ def fetch(product, root, date, bbox, variable, probe_latest, **kwargs):
     name = runs[stamp]
     print(f"Reading {folder}/{name}", file=sys.stderr)
 
-    # Read lazily and load only after the variable and bbox subset: full files are ~4 GB.
+    # Read lazily and load only after the variable and bbox subset. A Zarr run is read in
+    # place, one chunk per variable and time; a NetCDF run is downloaded whole first.
     tmp = tempfile.TemporaryDirectory()
-    if remote:
-        path = Path(tmp.name) / name
-        fs.get(f"{folder}/{name}", str(path))
+    if name.endswith(".zarr"):
+        store = fs.get_mapper(f"{folder}/{name}") if remote else local / name
+        raw = xr.open_zarr(store, chunks=None, decode_times=False)
     else:
-        path = local / name
-    raw = xr.open_dataset(path, decode_times=False)
+        if remote:
+            path = Path(tmp.name) / name
+            fs.get(f"{folder}/{name}", str(path))
+        else:
+            path = local / name
+        raw = xr.open_dataset(path, decode_times=False)
     # Units "hours since 1-1-1" make xarray warn about the ambiguous year; pad it.
     raw["time"].attrs["units"] = "hours since 0001-01-01 00:00:00"
     ds = xr.decode_cf(raw)
@@ -182,6 +194,12 @@ def fetch(product, root, date, bbox, variable, probe_latest, **kwargs):
     out["step"].attrs.update(
         standard_name="forecast_period", long_name="time since forecast_reference_time"
     )
+    if list_variables:
+        for n, da in out.data_vars.items():
+            print(f"{n}\t({', '.join(map(str, da.dims))})\t{da.attrs.get('long_name', '')}")
+        raw.close()
+        tmp.cleanup()
+        return
     if variable:
         unknown = sorted(set(variable) - set(out.data_vars))
         if unknown:

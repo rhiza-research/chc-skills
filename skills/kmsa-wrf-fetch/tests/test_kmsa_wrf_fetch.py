@@ -80,14 +80,19 @@ def test_daily_product_variable_and_bbox(tmp_path, fetch_mod):
         assert ds["longitude"].values.tolist() == [36.5, 37.0]
 
 
-def test_full_product_passes_wrf_fields_through(tmp_path, fetch_mod):
+def write_full_run(tmp_path):
+    """A full_wrf/ Zarr run with extra WRF fields, as the archive keeps whole WRF output."""
     src = write_run(tmp_path / "src.nc", "2026-10-26T03")
     with xr.open_dataset(src, decode_times=False) as ds:
         full = ds.load()
     full["u10"] = full["t2"] * 0 + 4.0
+    full["u10"].attrs["long_name"] = "U at 10 M (m s-1)"
     full["u"] = (("time", "lev_2", "lat", "lon"), np.full((5, 3, len(LATS), len(LONS)), 7.0))
-    (tmp_path / "full_wrf").mkdir()
-    full.to_netcdf(tmp_path / "full_wrf/wrf_full_20261026.nc")
+    full.to_zarr(tmp_path / "full_wrf/wrf_full_20261026.zarr", zarr_format=2, consolidated=True)
+
+
+def test_full_product_passes_wrf_fields_through(tmp_path, fetch_mod):
+    write_full_run(tmp_path)
     out = tmp_path / "wrf.zarr"
 
     run_skill(
@@ -103,7 +108,22 @@ def test_full_product_passes_wrf_fields_through(tmp_path, fetch_mod):
         assert ds["u10"].dims == ("step", "lev", "latitude", "longitude")
         np.testing.assert_allclose(ds["u10"].values, 4.0)
         assert ds["u"].dims == ("step", "lev_2", "latitude", "longitude")
-        assert ds.attrs["weather_skills_source"] == "kmsa-wrf:full_wrf/wrf_full_20261026.nc"
+        assert ds.attrs["weather_skills_source"] == "kmsa-wrf:full_wrf/wrf_full_20261026.zarr"
+
+
+def test_list_variables(tmp_path, fetch_mod, capsys):
+    write_full_run(tmp_path)
+
+    run_skill(
+        fetch_mod.fetch,
+        *("--root", str(tmp_path), "--product", "full", "--date", "2026-10-26"),
+        "--list-variables",
+    )
+
+    lines = capsys.readouterr().out.splitlines()
+    assert "tp\t(step, latitude, longitude)\tTotal precipitation" in lines
+    assert "u10\t(step, lev, latitude, longitude)\tU at 10 M (m s-1)" in lines
+    assert any(line.startswith("u\t(step, lev_2, latitude, longitude)") for line in lines)
 
 
 def test_refuses_unknown_variable(tmp_path, fetch_mod, capsys):
