@@ -30,7 +30,7 @@ position figures, and the DWD ICON-EPS ensemble regridded from its triangular gr
 | [`icon-eps-fetch`](skills/icon-eps-fetch/) | Fetch the newest DWD ICON-EPS global run (40 members, to 7.5 days: precip, 2 m temperature/dewpoint/humidity, 10 m winds and gusts, cloud cover, surface pressure), regridded from ICON's triangular grid to a regular lat/lon grid. No credentials; DWD keeps only ~24 h of runs |
 | [`ecmwf-04deg-fetch`](skills/ecmwf-04deg-fetch/) | Fetch one CHC-standardized ECMWF 0.4° daily precip ensemble (101 members, 46 lead days) from the private `gs://sheerwater-datalake/ecmwf-0_4/forecast/` archive, reading only the `--bbox` chunks (zarr, concurrently). Needs Google Cloud credentials; licensed data, keep it private |
 | [`resolve-chc-region`](skills/resolve-chc-region/) | Bbox and boundary polygon for the Tana River basin, Kenya's KNSDI national outline (plus county lines), the Kenya OND briefing box, and East Africa clipped at 15°S, in the same shape as `resolve-region` |
-| [`chc-plot-theme`](skills/chc-plot-theme/) | KMSA and classic CHC plot themes (`--theme kmsa` or `chc`, JSON to save for `plot --theme-file`) and CHC/KMSA rainfall colormaps (`chc_precip_<window>`, `chc_precip_anom_<window>`, `kmsa`; `--for ZARR` picks the window), printed as JSON for a trace's `meta.palette`, plus the KMSA-style Kenya map recipe |
+| [`chc-plot-theme`](skills/chc-plot-theme/) | KMSA and CHC rainfall palettes for the `plot` skill: a `.libsonnet` library to import in a spec (`ws.classBar(chc.kmsa, 'mm')`), or one palette as JSON with `--colormap` (`kmsa`, `chc_precip_<window>`, `chc_precip_anom_<window>`; `--for ZARR` picks the window), plus the KMSA-style Kenya map example |
 
 ## Quick start
 
@@ -85,7 +85,10 @@ uv run skills/icon-eps-fetch/scripts/fetch.py --bbox 5.5/33.5/-5/42.5 -o /tmp/ic
 # Tana River basin bbox + polygon (for clip-region --geojson / plot masks)
 uv run skills/resolve-chc-region/scripts/resolve.py "Tana River basin" --geojson /tmp/tana.json
 
-# CHC rainfall colormap sized to a totals Zarr's aggregation_period
+# KMSA and CHC rainfall palettes as a Jsonnet library for plot specs
+uv run skills/chc-plot-theme/scripts/theme.py -o /tmp/chc_palettes.libsonnet
+
+# CHC rainfall palette sized to a totals Zarr's aggregation_period
 uv run skills/chc-plot-theme/scripts/theme.py --colormap chc_precip --for /tmp/totals.zarr
 ```
 

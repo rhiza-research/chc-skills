@@ -44,7 +44,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --probe-latest
 - `--output`, `-o` — output Zarr, overwritten.
 
 ### Output
-- Dims `(number, step, latitude, longitude)`: 40 members numbered 1–40 (no control), latitude descending, longitude `[-180, 180)`. Scalar `time` is the init.
+- Dims `(number, step, latitude, longitude)`: 40 members numbered 1–40 (no control), latitude south to north, longitude `[-180, 180)`. Scalar `time` is the init.
 - `tp` is a rate in `mm day-1` over `[step, next step)`, labelled at the interval start (`step=0` is 0–24 h with the default interval). The last lead has no interval, so it is dropped, for every field when `tp` is in the request.
 - `t2m`, `d2m` are `degree_Celsius`; `sp` is `hPa`; `r2`, `tcc` are `%`; winds `m s-1`.
 - `data_interval` is stamped for even leads; uneven leads (6-hourly to 120 h, then 12-hourly) get `step_bounds`. `weather_skills_source = dwd-icon-eps:<HH>/<YYYYMMDDHH>`; `license = CC BY 4.0; source: Deutscher Wetterdienst`.
@@ -67,4 +67,4 @@ Writes daily ICON-EPS precip rates for the coming week over Kenya from the newes
 
 ## Details
 
-**Weekly totals and maps.** The output is a standard forecast Zarr, so the usual chain applies: `aggregate-temporal --period "7 day"`, then `convert-to-totals`, then `summarize-dim --dim number --method mean` (or `exceedance-probability` on the totals with members kept), then `plot` or `plot-compare-forecasts`. For a KMSA-style Kenya map use `chc-plot-theme --theme kmsa` and the outline from `resolve-chc-region`.
+**Weekly totals and maps.** The output is a standard forecast Zarr, so the usual chain applies: `aggregate-temporal --period "7 day"`, then `convert-to-totals`, then `summarize-dim --dim number --method mean` (or `exceedance-probability` on the totals with members kept), then `plot` or `plot-compare-forecasts`. For a KMSA-style Kenya map use the `kmsa` palette from `chc-plot-theme` and the outline from `resolve-chc-region`.

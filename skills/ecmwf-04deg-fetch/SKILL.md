@@ -43,7 +43,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --probe-latest
 - `--output`, `-o` — output Zarr, overwritten.
 
 ### Output
-- Dims `(number, step, latitude, longitude)`: 101 members numbered 0–100 (0 is the control), latitude descending, longitude `[-180, 180)`, 0.4 degree spacing. Scalar `time` is the init (00 UTC), `valid_time = time + step`.
+- Dims `(number, step, latitude, longitude)`: 101 members numbered 0–100 (0 is the control), latitude south to north, longitude `[-180, 180)`, 0.4 degree spacing. Scalar `time` is the init (00 UTC), `valid_time = time + step`.
 - `tp` is a rate in `mm day-1`: `step = N days` is the rain of the 24 h starting at init + N days (labelled at the interval start), `data_interval = 1 day`.
 - `weather_skills_source = sheerwater-ecmwf-0_4:<YYYYMMDD>`; the `license` attr marks the data as licensed and private.
 
@@ -65,4 +65,4 @@ Writes the newest init's daily precipitation rates for the first two weeks over 
 
 ## Details
 
-**Weekly totals and maps.** The output is a standard forecast Zarr, so the usual chain applies: `aggregate-temporal --period "7 day"`, then `convert-to-totals`, then `summarize-dim --dim number --method mean` (or `exceedance-probability` on the totals with members kept), then `plot` or `plot-compare-forecasts`. For a KMSA-style Kenya map use `chc-plot-theme --theme kmsa` and the outline from `resolve-chc-region`.
+**Weekly totals and maps.** The output is a standard forecast Zarr, so the usual chain applies: `aggregate-temporal --period "7 day"`, then `convert-to-totals`, then `summarize-dim --dim number --method mean` (or `exceedance-probability` on the totals with members kept), then `plot` or `plot-compare-forecasts`. For a KMSA-style Kenya map use the `kmsa` palette from `chc-plot-theme` and the outline from `resolve-chc-region`.
