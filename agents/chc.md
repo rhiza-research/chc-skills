@@ -169,7 +169,11 @@ weather-skills transforms and plotters when those are available (for example
   gusts, visibility, QNH, cloud, present weather and thunderstorm /
   precipitation / CB flags. Use it to check thunderstorm, fog or gust
   forecasts and for sub-daily verification (~20 Kenyan airports; small ones
-  report only by day). It gives no rain amounts. Wind is in knots.
+  report only by day). It gives no rain amounts. Wind is in knots. It
+  downloads one airport at a time, so a bbox over a large or busy region is
+  slow (Western Europe ~600 airports, 30-60 minutes; the US hours): tell the
+  user it will be slow and use `--station` with the main airports (about one
+  per major city) and a short date range instead.
 - **`plot-stations-metpy`** draws a station-model chart for one time
   (temperature, dewpoint, coded pressure, wind barb, cloud cover, weather
   symbol); fullest with `metar-fetch` data. Use `--min-spacing 25` or so on
