@@ -59,10 +59,15 @@ def chc_plot_theme(colormap=None, window_days=None, for_ds=None, output=None, **
     """Print the KMSA and CHC rainfall palettes as a Jsonnet library, or one palette as JSON."""
     if colormap is None:
         if window_days is not None or for_ds is not None:
-            raise UsageError("--window-days / --for go with --colormap chc_precip or chc_precip_anom.")
-        text = HEADER + "{\n" + ",\n".join(
-            f"  {name}: {json.dumps(palette)}" for name, palette in PALETTES.items()
-        ) + ",\n}\n"
+            raise UsageError(
+                "--window-days / --for go with --colormap chc_precip or chc_precip_anom."
+            )
+        text = (
+            HEADER
+            + "{\n"
+            + ",\n".join(f"  {name}: {json.dumps(palette)}" for name, palette in PALETTES.items())
+            + ",\n}\n"
+        )
     else:
         if for_ds is not None and window_days is None:
             periods = {
