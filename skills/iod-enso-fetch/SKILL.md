@@ -34,13 +34,13 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --index INDEX --product forecast --p
 
 ### Output
 - Figure: the BoM PNG with `weather_skills_history` in its metadata. Forecast figures are the plume of 99 members (grey), ensemble mean (green), and observations (black).
-- Observation data: `(time)` with one variable; `time` is the week-ending (SOI: 30-day-window-ending) date.
+- Observation data: `(time)` with one variable; `time` is the week-ending (SOI: 30-day-window-ending) date. Weekly indices carry CF `time_bounds` for each Monday-to-Sunday week (start day, day after the end day); SOI carries `data_interval` `1 day`.
 
-  | `--index` | Variable | Units | `data_interval` |
+  | `--index` | Variable | Units | Time cells |
   |---|---|---|---|
-  | `iod` | `iod_mode_index` | `degree_Celsius` | `7 day` |
-  | `enso`, `relative-nino3.4` | `relative_nino34` | `degree_Celsius` | `7 day` |
-  | `nino3.4` | `nino34` | `degree_Celsius` | `7 day` |
+  | `iod` | `iod_mode_index` | `degree_Celsius` | weekly `time_bounds` |
+  | `enso`, `relative-nino3.4` | `relative_nino34` | `degree_Celsius` | weekly `time_bounds` |
+  | `nino3.4` | `nino34` | `degree_Celsius` | weekly `time_bounds` |
   | `soi` | `soi` | `1` | `1 day` |
 - Forecast data: `(time)` at month starts with `time_bounds`, scalar `init_time` (issue date), the index variable as the ensemble mean, and `prob_below` / `prob_neutral` / `prob_above` in `percent` of members beyond the event threshold (IOD ±0.4 °C, Niño ±0.8 °C).
 
@@ -66,5 +66,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --index enso -o enso.zarr
 # IOD plume from a past issue
 uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --index iod --product forecast --date 2024-06-08 -o iod_20240608.png
 ```
+
+Monthly and seasonal means from the weekly values: `aggregate-temporal --period monthly` weights each week by its days in the month (a week split by a month edge counts in both) and stamps `aggregation_coverage`; then `label-group --time year --time DJF,MAM,JJA,SON` and `summarize-dim --by year --by month_group --method mean` give one value per season, NaN for a season the record does not fully cover (the current month is partial). SOI windows overlap, so the same steps do not apply to `soi`.
 
 Source URLs per index: [references/REFERENCE.md](references/REFERENCE.md).
