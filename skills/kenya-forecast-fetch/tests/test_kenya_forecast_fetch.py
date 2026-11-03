@@ -27,10 +27,10 @@ def test_fetch_writes_zarr_and_stamps_history(tmp_path, fetch_mod, monkeypatch):
 
     assert Path(out).exists()
     with xr.open_zarr(out, consolidated=True) as ds:
-        assert "tp" in ds.data_vars
-        assert ds["tp"].attrs["units"] == "mm day-1"
-        assert ds["tp"].attrs.get("data_interval")
-        assert "aggregation_period" not in ds["tp"].attrs
+        assert list(ds.data_vars) == ["precip"]
+        assert ds["precip"].attrs["units"] == "mm day-1"
+        assert ds["precip"].attrs.get("data_interval")
+        assert "aggregation_period" not in ds["precip"].attrs
         assert "kenya-forecasting-data:" in ds.attrs.get("weather_skills_source", "")
     history = load_history(out)
     assert history[-1]["skill"] == "kenya-forecast-fetch"
@@ -52,12 +52,27 @@ def test_fetch_overwrites_rate_standard_name_on_amount_units(tmp_path, fetch_mod
     run_skill(fetch_mod.fetch, "--dataset", "precip", "--date", "2026-08-17", "-o", str(out))
 
     with xr.open_zarr(out, consolidated=True) as ds:
-        assert "precipitation_amount" not in ds["tp"].attrs["standard_name"]
-        assert ds["tp"].attrs["standard_name"] == "lwe_precipitation_rate"
-        assert ds["tp"].attrs["units"] == "mm day-1"
-        assert ds["tp"].attrs.get("data_interval")
-        assert "aggregation_period" not in ds["tp"].attrs
+        assert "precipitation_amount" not in ds["precip"].attrs["standard_name"]
+        assert ds["precip"].attrs["standard_name"] == "lwe_precipitation_rate"
+        assert ds["precip"].attrs["units"] == "mm day-1"
+        assert ds["precip"].attrs.get("data_interval")
+        assert "aggregation_period" not in ds["precip"].attrs
         assert "aggregation_coverage" not in ds.coords
+
+
+@pytest.mark.parametrize("name", ["precip", "tp"])
+def test_fetch_variable_selects_precip(tmp_path, fetch_mod, monkeypatch, name):
+    out = tmp_path / f"kenya_{name}.zarr"
+    remote = make_forecast(name="tp", members=2)
+    monkeypatch.setattr(fetch_mod, "_store_exists", lambda key: True)
+    monkeypatch.setattr(fetch_mod, "_open_remote", lambda key: remote.copy(deep=True))
+
+    run_skill(
+        fetch_mod.fetch, "--dataset", "precip", "--date", "2026-08-17", "-v", name, "-o", str(out)
+    )
+
+    with xr.open_zarr(out, consolidated=True) as ds:
+        assert list(ds.data_vars) == ["precip"]
 
 
 def test_fetch_honors_date_variable_and_bbox(tmp_path, fetch_mod, monkeypatch):
@@ -128,8 +143,8 @@ def test_fetch_gefs_already_daily_shifts_to_lead_zero(tmp_path, fetch_mod, monke
     with xr.open_zarr(out, consolidated=True) as ds:
         days = np.asarray(ds["step"].values).astype("timedelta64[D]").astype(int)
         assert list(days) == [0, 1, 2]
-        np.testing.assert_allclose(ds["tp"].values[:, 0, 0], [5.0, 2.0, 0.0])
-        assert ds["tp"].attrs["units"] == "mm day-1"
+        np.testing.assert_allclose(ds["precip"].values[:, 0, 0], [5.0, 2.0, 0.0])
+        assert ds["precip"].attrs["units"] == "mm day-1"
         assert ds.sizes["step"] == 3
 
 
@@ -187,9 +202,9 @@ def test_fetch_medium_range_weekly_totals_left_labeled(tmp_path, fetch_mod, monk
     with xr.open_zarr(out, consolidated=True) as ds:
         days = np.asarray(ds["step"].values).astype("timedelta64[D]").astype(int)
         assert list(days) == [0, 7]
-        np.testing.assert_allclose(ds["tp"].values[:, 0, 0], [1.0, 2.0])
-        assert ds["tp"].attrs["units"] == "mm day-1"
-        assert ds["tp"].attrs.get("aggregation_period") == "7 day"
+        np.testing.assert_allclose(ds["precip"].values[:, 0, 0], [1.0, 2.0])
+        assert ds["precip"].attrs["units"] == "mm day-1"
+        assert ds["precip"].attrs.get("aggregation_period") == "7 day"
 
 
 def test_fetch_winds_do_not_shift_step(tmp_path, fetch_mod, monkeypatch):
@@ -265,14 +280,14 @@ def test_fetch_precip_downscaled_opens_nc_and_writes_weekly_rates(tmp_path, fetc
 
     assert seen["key"] == "2026-08-30/data/data_weekly_Kenya_downscaled.nc"
     with xr.open_zarr(out, consolidated=True) as ds:
-        assert list(ds["tp"].dims) == ["step", "latitude", "longitude"]
+        assert list(ds["precip"].dims) == ["step", "latitude", "longitude"]
         assert "rank" not in ds.variables
         days = np.asarray(ds["step"].values).astype("timedelta64[D]").astype(int)
         assert list(days) == [0, 7]
-        np.testing.assert_allclose(ds["tp"].values[:, 0, 0], [1.0, 1.0])
-        assert ds["tp"].attrs["units"] == "mm day-1"
-        assert ds["tp"].attrs.get("data_interval") == "7 day"
-        assert ds["tp"].attrs.get("aggregation_period") == "7 day"
+        np.testing.assert_allclose(ds["precip"].values[:, 0, 0], [1.0, 1.0])
+        assert ds["precip"].attrs["units"] == "mm day-1"
+        assert ds["precip"].attrs.get("data_interval") == "7 day"
+        assert ds["precip"].attrs.get("aggregation_period") == "7 day"
 
 
 def test_fetch_precip_downscaled_converts_to_weekly_totals(tmp_path, fetch_mod, monkeypatch):
@@ -290,8 +305,8 @@ def test_fetch_precip_downscaled_converts_to_weekly_totals(tmp_path, fetch_mod, 
     )
     # The stamped rate and aggregation_period give weekly totals (what convert-to-totals does).
     with xr.open_zarr(fetched, consolidated=True) as ds:
-        period = ds["tp"].attrs["aggregation_period"]
-        total = rate_to_total(ds["tp"].load(), period, dim="step")
+        period = ds["precip"].attrs["aggregation_period"]
+        total = rate_to_total(ds["precip"].load(), period, dim="step")
     assert total.pint.units == ureg.Unit("mm")
     np.testing.assert_allclose(total.pint.magnitude[:, 0, 0], [7.0, 7.0])
     assert total.sizes["step"] == 2
@@ -321,7 +336,7 @@ def test_fetch_precip_downscaled_keeps_ensemble_members(tmp_path, fetch_mod, mon
     with xr.open_zarr(out, consolidated=True) as ds:
         assert ds.sizes["number"] == 3
         np.testing.assert_allclose(
-            ds["tp"].isel(step=0, latitude=0, longitude=0).values, [1.0, 2.0, 3.0]
+            ds["precip"].isel(step=0, latitude=0, longitude=0).values, [1.0, 2.0, 3.0]
         )
 
 
@@ -401,15 +416,15 @@ def test_fetch_precip_downscaled_daily_opens_tif_and_writes_daily_rates(
 
     assert seen["key"] == "2026-09-16/data/daily_downscaled_kenya.tif"
     with xr.open_zarr(out, consolidated=True) as ds:
-        assert list(ds["tp"].dims) == ["step", "latitude", "longitude"]
+        assert list(ds["precip"].dims) == ["step", "latitude", "longitude"]
         assert "spatial_ref" not in ds.variables
         assert "band" not in ds.dims
         days = np.asarray(ds["step"].values).astype("timedelta64[D]").astype(int)
         assert list(days) == [0, 1, 2]
-        np.testing.assert_allclose(ds["tp"].values[:, 0, 0], [5.0, 5.0, 5.0])
-        assert ds["tp"].attrs["units"] == "mm day-1"
-        assert ds["tp"].attrs.get("data_interval") == "1 day"
-        assert "aggregation_period" not in ds["tp"].attrs
+        np.testing.assert_allclose(ds["precip"].values[:, 0, 0], [5.0, 5.0, 5.0])
+        assert ds["precip"].attrs["units"] == "mm day-1"
+        assert ds["precip"].attrs.get("data_interval") == "1 day"
+        assert "aggregation_period" not in ds["precip"].attrs
         assert np.datetime64(ds["time"].values, "D") == np.datetime64("2026-09-16")
         assert "number" not in ds.dims
 

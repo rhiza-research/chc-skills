@@ -17,7 +17,7 @@
 
 # Source-to-output transform declaration (everything else passes through):
 # - Dims: CHC's `M`, `L`, `Y`, `X` -> `number`, `step`, `latitude`, `longitude`.
-# - Variable name: `pr` -> `tp`, as ecmwf-fetch names ECMWF precipitation.
+# - Variable name: `pr` -> `precip`, as weather-skills fetchers name precipitation.
 # - Units: `mm/day` -> `mm day-1` (same unit, CF/udunits spelling). Values are untouched:
 #   each lead is the rain of the 24 h starting at init + L days, i.e. a daily rate.
 # - `step`: the integer lead-day index `L` becomes `L` days (timedelta), labelled at the
@@ -25,7 +25,7 @@
 #   the object name), `valid_time = time + step`.
 # - Coordinates: float32 lat/lon -> float64 rounded to 4 decimals (0.4000001 -> 0.4);
 #   int16 `number` -> int64. Latitude stays descending, longitude stays [-180, 180).
-# - standard_name `lwe_precipitation_rate` and long_name `Total precipitation` on `tp`.
+# - standard_name `lwe_precipitation_rate` and long_name `Total precipitation` on `precip`.
 
 import json
 import os
@@ -49,7 +49,7 @@ _PREFIX = "ecmwf-0_4/forecast"
 # The archive keeps each init as a zarr store; inits archived before the switch to zarr
 # may still exist only as CHC's netCDF file.
 _OBJECT_RE = re.compile(r"pr_IFS-SUBS-0\.4_(\d{8})\.(zarr|daily\.nc)$")
-_VARIABLES = {"tp": "pr", "pr": "pr", "precip": "pr"}
+_VARIABLES = {"precip": "pr", "tp": "pr", "pr": "pr"}
 _MAX_LEADS = 46
 # netCDF fallback: HDF5 chunks are (101 members, 1 lead, 50 lat, 150 lon), ~1 MB
 # compressed each; blocks this size keep a bbox read to a few range requests per chunk.
@@ -283,7 +283,7 @@ def _to_forecast(raw, init, n_leads):
 
     init_ns = np.datetime64(init.isoformat(), "ns")
     steps = (pr["step"].values.astype("int64") * np.timedelta64(1, "D")).astype("timedelta64[ns]")
-    tp = xr.DataArray(
+    precip = xr.DataArray(
         pr.values.astype("float32"),
         dims=("number", "step", "latitude", "longitude"),
         coords={
@@ -294,7 +294,7 @@ def _to_forecast(raw, init, n_leads):
         },
         attrs={"units": "mm day-1", "long_name": "Total precipitation"},
     )
-    ds = xr.Dataset({"tp": tp}).assign_coords(time=init_ns)
+    ds = xr.Dataset({"precip": precip}).assign_coords(time=init_ns)
     return ds.assign_coords(valid_time=("step", init_ns + steps))
 
 
@@ -314,7 +314,10 @@ def _to_forecast(raw, init, n_leads):
     "--variable",
     "-v",
     action="append",
-    help="Field to retrieve. Only tp (daily precipitation; `pr` is accepted). Default tp.",
+    help=(
+        "Field to retrieve. Only precip (daily precipitation; `tp` and `pr` are accepted). "
+        "Default precip."
+    ),
 )
 @weather_skill.argument(
     "--max-lead",
@@ -347,7 +350,7 @@ def fetch(date, bbox, variable, max_lead, probe_latest, **kwargs):
     unknown = [v for v in (variable or []) if v not in _VARIABLES]
     if unknown:
         raise UsageError(
-            f"unknown variable(s): {', '.join(unknown)}. Available: tp (alias pr, precip)."
+            f"unknown variable(s): {', '.join(unknown)}. Available: precip (alias tp, pr)."
         )
     n_leads = _parse_lead_days(max_lead)
 

@@ -35,7 +35,8 @@ _SKILL_VERSION = "0.0.2"
 _DEFAULT_ROOT = "gs://sheerwater-datalake/kmsa-wrf"
 # --product → archive folder under the root.
 _PRODUCTS = {"7day": "7_day", "daily": "Daily_Data"}
-_VARIABLES = ("tp", "t2m")
+# -v names; `tp` is accepted for `precip`.
+_VARIABLES = ("precip", "t2m", "tp")
 _FILE_RE = re.compile(r"^(\d{8})_to_(\d{8})_fcst\.nc$")
 
 
@@ -60,7 +61,10 @@ _FILE_RE = re.compile(r"^(\d{8})_to_(\d{8})_fcst\.nc$")
     "-v",
     action="append",
     choices=list(_VARIABLES),
-    help="tp (total precipitation) or t2m (2 m temperature); repeat for both. Default: both.",
+    help=(
+        "precip (total precipitation; `tp` is accepted) or t2m (2 m temperature); repeat "
+        "for both. Default: both."
+    ),
 )
 @weather_skill.argument(
     "--probe-latest",
@@ -157,21 +161,21 @@ def fetch(product, root, date, bbox, variable, probe_latest, **kwargs):
 
     out = xr.Dataset(
         {
-            "tp": rain.isel(lev=0, drop=True),
+            "precip": rain.isel(lev=0, drop=True),
             "t2m": ds["t2"].isel(lev=0, drop=True),
         }
     )
     out = out.rename({"lat": "latitude", "lon": "longitude"})
     out = out.assign_coords(step=("time", times - init)).swap_dims({"time": "step"})
     out = out.drop_vars("time").assign_coords(time=init)
-    out["tp"].attrs = {"units": "mm", "long_name": "Total precipitation"}
+    out["precip"].attrs = {"units": "mm", "long_name": "Total precipitation"}
     out["t2m"].attrs = {"units": "K", "long_name": "2 metre temperature"}
     out["time"].attrs.update(standard_name="forecast_reference_time", axis="T")
     out["step"].attrs.update(
         standard_name="forecast_period", long_name="time since forecast_reference_time"
     )
     if variable:
-        out = out[variable]
+        out = out[list(dict.fromkeys("precip" if v == "tp" else v for v in variable))]
 
     if bbox is not None:
         out = bbox_subset(out, bbox)

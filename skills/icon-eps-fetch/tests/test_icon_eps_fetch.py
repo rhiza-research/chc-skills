@@ -56,19 +56,19 @@ def mocked(fetch_mod, grid, monkeypatch):
     return requested
 
 
-def test_fetch_tp_is_daily_rates_with_history(tmp_path, fetch_mod, mocked):
+def test_fetch_precip_is_daily_rates_with_history(tmp_path, fetch_mod, mocked):
     out = tmp_path / "icon.zarr"
     run_skill(fetch_mod.fetch, "--bbox", "5/34/-5/42", "-o", str(out))
 
     assert sorted({s for _, s in mocked}) == list(range(0, 169, 24))
     with xr.open_zarr(out, consolidated=True) as ds:
-        tp = ds["tp"]
-        assert tp.attrs["units"] == "mm day-1"
-        assert tp.attrs.get("data_interval")
+        precip = ds["precip"]
+        assert precip.attrs["units"] == "mm day-1"
+        assert precip.attrs.get("data_interval")
         assert ds.sizes["number"] == MEMBERS
         assert ds.sizes["step"] == 7
         assert ds["step"].values[0] == np.timedelta64(0, "ns")
-        np.testing.assert_allclose(tp.values, RATE_MM_DAY, rtol=1e-5)
+        np.testing.assert_allclose(precip.values, RATE_MM_DAY, rtol=1e-5)
         assert ds["time"].values == np.datetime64("2026-10-21T00:00", "ns")
         assert float(ds["latitude"].max()) == 5.0 and float(ds["longitude"].min()) == 34.0
         assert ds.attrs["weather_skills_source"] == f"dwd-icon-eps:00/{INIT}"
@@ -89,6 +89,13 @@ def test_dwd_names_nearest_and_kelvin(tmp_path, fetch_mod, mocked):
         hours = (ds["step"].values / np.timedelta64(1, "h")).astype(int).tolist()
     # 6-hourly leads stop at 120 h; after that only the 12-hourly ones exist
     assert hours == list(range(0, 121, 6)) + [132, 144, 156, 168]
+
+
+def test_tp_is_an_alias_for_precip(tmp_path, fetch_mod, mocked):
+    out = tmp_path / "icon_tp.zarr"
+    run_skill(fetch_mod.fetch, "--bbox", "2/36/-2/40", "-v", "tp", "-o", str(out))
+    with xr.open_zarr(out, consolidated=True) as ds:
+        assert list(ds.data_vars) == ["precip"]
 
 
 def test_unknown_variable_exits_2(tmp_path, fetch_mod, mocked):

@@ -54,17 +54,17 @@ def test_fetch_layout_units_and_history(tmp_path, fetch_mod, mocked):
     run_skill(fetch_mod.fetch, "--bbox", "5.5/33.5/-5/42.5", "--max-lead", "14D", "-o", str(out))
 
     with xr.open_zarr(out, consolidated=True) as ds:
-        tp = ds["tp"]
-        assert tp.dims == ("number", "step", "latitude", "longitude")
-        assert tp.attrs["units"] == "mm day-1"
-        assert tp.attrs["data_interval"] == "1 day"
+        precip = ds["precip"]
+        assert precip.dims == ("number", "step", "latitude", "longitude")
+        assert precip.attrs["units"] == "mm day-1"
+        assert precip.attrs["data_interval"] == "1 day"
         assert ds.sizes["step"] == 14 and ds.sizes["number"] == MEMBERS
         assert ds["step"].values[0] == np.timedelta64(0, "ns")
         assert ds["step"].values[-1] == np.timedelta64(13, "D")
         assert ds["time"].values == np.datetime64("2026-10-26T00:00", "ns")
         assert ds["valid_time"].values[1] == np.datetime64("2026-10-27T00:00", "ns")
-        np.testing.assert_allclose(tp.isel(number=0).mean(["latitude", "longitude"]), range(14))
-        np.testing.assert_allclose(tp.isel(number=2, step=0), 200.0)
+        np.testing.assert_allclose(precip.isel(number=0).mean(["latitude", "longitude"]), range(14))
+        np.testing.assert_allclose(precip.isel(number=2, step=0), 200.0)
         assert float(ds["latitude"].max()) <= 5.5 and float(ds["latitude"].min()) >= -5.0
         assert float(ds["longitude"].min()) >= 33.5 and float(ds["longitude"].max()) <= 42.5
         assert ds["latitude"].values[0] > ds["latitude"].values[-1]

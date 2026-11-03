@@ -7,7 +7,7 @@ allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py *)
 metadata:
   catalog-group: fetchers
   variables:
-    - tp
+    - precip
     - t2m
     - d2m
     - r2
@@ -34,7 +34,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --probe-latest
 - `--date` — init date. Default: the newest init of `--run` on the server. DWD keeps only ~24 h of runs, so this is today's or yesterday's date.
 - `--run` — init hour UTC: `0`, `6`, `12` or `18`. Default `0`. 00/12 runs reach 180 h, 06/18 runs 120 h.
 - `--bbox` — `N/W/S/E` decimal degrees. Omit for the globe. DWD serves global files only, so a bbox saves memory, not download time.
-- `--variable`, `-v` — one field per flag; repeat for several. Default `tp`. `tp`, `t2m`, `d2m`, `r2` (2 m relative humidity), `u10`, `v10`, `fg10` (DWD `vmax_10m`, maximum 10 m gust), `tcc` (total cloud cover), `sp`. DWD folder names (`tot_prec`, `t_2m`, `td_2m`, `relhum_2m`, `u_10m`, `v_10m`, `vmax_10m`, `clct`, `ps`) are accepted. An unknown name exits 2 and lists `Available (most used first):`.
+- `--variable`, `-v` — one field per flag; repeat for several. Default `precip`. `precip`, `t2m`, `d2m`, `r2` (2 m relative humidity), `u10`, `v10`, `fg10` (DWD `vmax_10m`, maximum 10 m gust), `tcc` (total cloud cover), `sp`. `tp` and DWD folder names (`tot_prec`, `t_2m`, `td_2m`, `relhum_2m`, `u_10m`, `v_10m`, `vmax_10m`, `clct`, `ps`) are accepted. An unknown name exits 2 and lists `Available (most used first):`.
 - `--max-lead` — last lead to keep (pandas timedelta: `168h`, `7D`). Default `168h`, one week.
 - `--step-interval` — keep the published leads that are multiples of this (pandas timedelta). Default `24h`. Use `6h` for a sub-daily cycle of instantaneous fields.
 - `--target-resolution` — output grid spacing in degrees. Default `0.25` (the native grid is ~20 km).
@@ -45,14 +45,14 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --probe-latest
 
 ### Output
 - Dims `(number, step, latitude, longitude)`: 40 members numbered 1–40 (no control), latitude descending, longitude `[-180, 180)`. Scalar `time` is the init.
-- `tp` is a rate in `mm day-1` over `[step, next step)`, labelled at the interval start (`step=0` is 0–24 h with the default interval). The last lead has no interval, so it is dropped, for every field when `tp` is in the request.
+- `precip` is a rate in `mm day-1` over `[step, next step)`, labelled at the interval start (`step=0` is 0–24 h with the default interval). The last lead has no interval, so it is dropped, for every field when `precip` is in the request.
 - `t2m`, `d2m` are `degree_Celsius`; `sp` is `hPa`; `r2`, `tcc` are `%`; winds `m s-1`.
 - `data_interval` is stamped for even leads; uneven leads (6-hourly to 120 h, then 12-hourly) get `step_bounds`. `weather_skills_source = dwd-icon-eps:<HH>/<YYYYMMDDHH>`; `license = CC BY 4.0; source: Deutscher Wetterdienst`.
 
 ### Notes
 - ICON-EPS is published only on ICON's triangular (icosahedral, R02B07) grid: 1,310,720 cells whose centres come from the run's `clat`/`clon` files. The skill regrids every field so the output works with every gridded skill. Linear interpolation smooths slightly and does not exactly conserve totals; `--regrid nearest` keeps native values. Output points outside the triangulation (the poles) take the nearest cell.
 - Leads thin out with lead time: hourly to 48 h, 3-hourly to 72 h, 6-hourly to 120 h, then 12-hourly. Requested leads the server lacks are skipped and named on stderr.
-- Each lead of each field is one global file, ~30–60 MB compressed. A week of `tp` at the default interval is 8 files (~400 MB); `--step-interval 6h` to 168 h is 25 files per field.
+- Each lead of each field is one global file, ~30–60 MB compressed. A week of `precip` at the default interval is 8 files (~400 MB); `--step-interval 6h` to 168 h is 25 files per field.
 - Credit DWD when publishing figures or data (CC BY 4.0).
 
 ### Errors
