@@ -31,6 +31,7 @@ position figures, and the DWD ICON-EPS ensemble regridded from its triangular gr
 | [`ecmwf-04deg-fetch`](skills/ecmwf-04deg-fetch/) | Fetch one CHC-standardized ECMWF 0.4° daily precip ensemble (101 members, 46 lead days) from the private `gs://sheerwater-datalake/ecmwf-0_4/forecast/` archive, reading only the `--bbox` chunks (zarr, concurrently). Needs Google Cloud credentials; licensed data, keep it private |
 | [`resolve-chc-region`](skills/resolve-chc-region/) | Bbox and boundary polygon for the Tana River basin, Kenya's KNSDI national outline (plus county lines), the Kenya OND briefing box, and East Africa clipped at 15°S, in the same shape as `resolve-region` |
 | [`chc-plot-theme`](skills/chc-plot-theme/) | KMSA and classic CHC plot themes (`--theme kmsa` or `chc`, JSON to save for `plot --theme-file`) and CHC/KMSA rainfall colormaps (`chc_precip_<window>`, `chc_precip_anom_<window>`, `kmsa`; `--for ZARR` picks the window), printed as JSON for a trace's `meta.palette`, plus the KMSA-style Kenya map recipe |
+| [`wind-rose-counts`](skills/wind-rose-counts/) | Count wind samples by direction sector (16 by default, north-centred) and speed class (2 m s-1 classes by default) from `wind_speed` / `wind_from_direction`, as counts and percent frequencies with calms apart: the table behind a wind rose; `--keep station_id` gives one per station |
 
 ## Quick start
 
