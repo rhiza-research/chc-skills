@@ -151,6 +151,11 @@ weather-skills transforms and plotters when those are available (for example
   mean bold). It takes the same inputs as `sounding-indices-metpy`; give
   `--lat`/`--lon` (or `--station`) and `--isel` for the time or lead. Add the
   `sp`/`t2m`/`d2m` store over Kenya so underground levels are hidden.
+  To compare a balloon with a model (or two models), overlay them with one
+  `--profile 'label=..;input=..;station=..|lat=..;lon=..;isel=..'` each instead
+  of `-i`: each keeps its own levels and surface, gets its own parcel and a
+  column in the index box. Do not stack different sources along `number`. For
+  weak CAPE add `--shade-alpha 0.6 --pressure-range 960/550` or `--inset on`.
 - **`vertical-interpolate-metpy`** moves pressure-level fields to other
   pressure levels (log-p), heights above sea level or ground (`--above-ground`),
   or isentropes. Use it to put two models on common levels or for 'wind 1 km
