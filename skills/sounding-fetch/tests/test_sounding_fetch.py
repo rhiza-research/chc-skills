@@ -88,8 +88,43 @@ def mod(monkeypatch):
 
     monkeypatch.setattr(module, "_station_list", lambda: STATIONS)
     monkeypatch.setattr(module, "_request", fake_request)
+    wyoming_calls = []
+
+    def fake_wyoming(wmo, when):
+        wyoming_calls.append((wmo, when))
+        return _wyoming_launch()
+
+    monkeypatch.setattr(module, "_wyoming", fake_wyoming)
     module.calls = calls
+    module.wyoming_calls = wyoming_calls
     return module
+
+
+def _wyoming_launch():
+    """A Wyoming-style launch: no level-type column, surface first, many levels, winds in knots."""
+    p = np.linspace(828, 100, 200)
+    t = np.interp(p, [100, 500, 700, 828], [-78, -6, 9, 21])
+    df = pd.DataFrame(
+        {
+            "pressure": p,
+            "height": np.linspace(1800, 16600, 200),
+            "temperature": t,
+            "dewpoint": t - 6,
+            "u_wind": np.full(200, 10.0),
+            "v_wind": np.zeros(200),
+        }
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        df.units = {
+            "pressure": "hPa",
+            "height": "meter",
+            "temperature": "degC",
+            "dewpoint": "degC",
+            "u_wind": "knot",
+            "v_wind": "knot",
+        }
+    return df
 
 
 def _fetch(mod, tmp_path, *extra):
@@ -197,3 +232,137 @@ def test_station_whose_record_ended_is_skipped(mod, tmp_path, capsys):
     err = capsys.readouterr().err
     assert "records only for 1973-1984; skipped" in err
     assert mod.calls == []
+
+
+def test_igra2_dates_make_no_wyoming_requests(mod, tmp_path):
+    ds = xr.open_zarr(_fetch(mod, tmp_path, "--station", "63741"), consolidated=True)
+    assert mod.wyoming_calls == []  # 2025 is long in IGRA2: no gap to fill
+    assert set(ds["source"].values.ravel()) == {"igra2"}
+    assert ds.attrs["weather_skills_source"] == "igra2"
+
+
+def test_wyoming_only(mod, tmp_path):
+    ds = xr.open_zarr(
+        _fetch(mod, tmp_path, "--station", "63741", "--source", "wyoming"), consolidated=True
+    )
+    assert mod.calls == []  # no IGRA2 request
+    # 00 and 12 UTC on both days, plus 00 UTC after the end day is not asked for.
+    assert [str(w)[:13] for _, w in mod.wyoming_calls] == [
+        "2025-04-13 00",
+        "2025-04-13 12",
+        "2025-04-14 00",
+        "2025-04-14 12",
+    ]
+    assert all(wmo == "63741" for wmo, _ in mod.wyoming_calls)
+    one = ds.sel(station_id="KEM00063741").isel(time=0)
+    assert str(one["source"].values) == "wyoming"
+    assert float(one["sp"]) == pytest.approx(828.0)  # surface = highest pressure
+    assert float(one["u"].sel(level=500)) == pytest.approx(5.14, abs=0.01)  # 10 kt
+    assert ds.attrs["weather_skills_source"] == "wyoming"
+
+
+def test_auto_fills_only_the_recent_gap(mod, monkeypatch, tmp_path):
+    today = pd.Timestamp.now(tz="UTC").tz_localize(None).normalize()
+    start = today - pd.Timedelta(days=2)
+    monkeypatch.setattr(
+        mod,
+        "_request",
+        lambda igra_id, s, e: _igra([_launch(start)]),  # IGRA2 has only the first launch
+    )
+    monkeypatch.setattr(
+        mod,
+        "_station_list",
+        lambda: STATIONS.assign(last_year=today.year),
+    )
+    out = tmp_path / "snd.zarr"
+    run_skill(
+        mod.fetch,
+        "--start-time",
+        str(start.date()),
+        "--end-time",
+        str(today.date()),
+        "--station",
+        "63741",
+        "-o",
+        str(out),
+    )
+    ds = xr.open_zarr(out, consolidated=True)
+    asked = [w for _, w in mod.wyoming_calls]
+    assert asked and min(asked) > start  # only launches after IGRA2's latest
+    sources = ds["source"].sel(station_id="KEM00063741").values
+    assert sources[0] == "igra2" and set(sources[1:]) == {"wyoming"}
+    assert ds.attrs["weather_skills_source"] == "igra2+wyoming"
+
+
+def test_overloaded_wyoming_keeps_igra2(mod, monkeypatch, tmp_path, capsys):
+    today = pd.Timestamp.now(tz="UTC").tz_localize(None).normalize()
+    start = today - pd.Timedelta(days=1)
+    monkeypatch.setattr(mod, "_request", lambda igra_id, s, e: _igra([_launch(start)]))
+    monkeypatch.setattr(mod, "_station_list", lambda: STATIONS.assign(last_year=today.year))
+
+    def busy(wmo, when):
+        raise mod.DataError("Wyoming sounding service unreachable (503)")
+
+    monkeypatch.setattr(mod, "_wyoming", busy)
+    out = tmp_path / "snd.zarr"
+    run_skill(
+        mod.fetch,
+        "--start-time",
+        str(start.date()),
+        "--end-time",
+        str(today.date()),
+        "--station",
+        "63741",
+        "-o",
+        str(out),
+    )
+    assert "keeping the IGRA2 launches" in capsys.readouterr().err
+    ds = xr.open_zarr(out, consolidated=True)
+    assert set(ds["source"].values.ravel()) == {"igra2"}
+
+
+def test_auto_uses_wyoming_when_igra2_is_down(mod, monkeypatch, tmp_path, capsys):
+    def down(igra_id, s, e):
+        raise mod.DataError("IGRA2 download failed for KEM00063741 after 3 tries (timeout)")
+
+    monkeypatch.setattr(mod, "_request", down)
+    ds = xr.open_zarr(_fetch(mod, tmp_path, "--station", "63741"), consolidated=True)
+    assert "trying Wyoming for every launch" in capsys.readouterr().err
+    assert len(mod.wyoming_calls) == 4  # the whole window, not only the last days
+    assert set(ds["source"].values.ravel()) == {"wyoming"}
+
+
+def test_igra2_only_fails_when_igra2_is_down(mod, monkeypatch, tmp_path):
+    def down(igra_id, s, e):
+        raise mod.DataError("IGRA2 download failed")
+
+    monkeypatch.setattr(mod, "_request", down)
+    with pytest.raises(SystemExit) as excinfo:
+        _fetch(mod, tmp_path, "--station", "63741", "--source", "igra2")
+    assert excinfo.value.code == 1
+    assert mod.wyoming_calls == []
+
+
+def test_station_list_cache(mod, monkeypatch, tmp_path, capsys):
+    import requests
+
+    monkeypatch.setattr(mod.Path, "home", lambda: tmp_path)
+    cache = tmp_path / ".cache" / "weather-skills" / "igra2-station-list.txt"
+    cache.parent.mkdir(parents=True)
+    cache.write_text("cached list")
+    # A fresh cache is used without a download.
+    monkeypatch.setattr(mod.requests, "get", lambda *a, **k: pytest.fail("downloaded"))
+    assert mod._station_list_text() == "cached list"
+
+    # A stale cache covers an NCEI outage.
+    old = cache.stat().st_mtime - 8 * 86400
+    import os
+
+    os.utime(cache, (old, old))
+
+    def unreachable(*a, **k):
+        raise requests.ConnectTimeout("timed out")
+
+    monkeypatch.setattr(mod.requests, "get", unreachable)
+    assert mod._station_list_text() == "cached list"
+    assert "using the cached IGRA2 station list" in capsys.readouterr().err

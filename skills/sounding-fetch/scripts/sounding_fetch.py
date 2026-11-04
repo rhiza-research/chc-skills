@@ -10,7 +10,7 @@
 #   "xarray",
 # ]
 # ///
-"""Fetch observed radiosonde soundings from NOAA's IGRA2 archive (via Siphon) as a station Zarr."""
+"""Fetch observed radiosonde soundings (IGRA2 archive, or the Wyoming service) via Siphon."""
 
 from __future__ import annotations
 
@@ -18,6 +18,7 @@ import sys
 import time
 import warnings
 from datetime import UTC, datetime
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -90,15 +91,33 @@ LEVEL_VARS = {
 TARGET_UNITS = {"t": "degC", "dewpoint": "degC", "u": "m/s", "v": "m/s", "gh": "m"}
 
 
-def _station_list() -> pd.DataFrame:
-    """IGRA2's fixed-width station list: id, position, name and years of record."""
+def _station_list_text() -> str:
+    """The station list, from a cache refreshed weekly; a stale cache covers NCEI outages."""
+    cache = Path.home() / ".cache" / "weather-skills" / "igra2-station-list.txt"
+    fresh = cache.is_file() and time.time() - cache.stat().st_mtime < 7 * 86400
+    if fresh:
+        return cache.read_text()
     try:
-        resp = requests.get(STATION_LIST, timeout=120)
+        resp = requests.get(STATION_LIST, timeout=(15, 120))
         resp.raise_for_status()
     except requests.RequestException as exc:
+        if cache.is_file():
+            print(
+                f"sounding-fetch: NCEI unreachable ({type(exc).__name__}); using the cached "
+                "IGRA2 station list",
+                file=sys.stderr,
+            )
+            return cache.read_text()
         raise DataError(f"cannot read the IGRA2 station list ({exc}); retry later") from exc
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    cache.write_text(resp.text)
+    return resp.text
+
+
+def _station_list() -> pd.DataFrame:
+    """IGRA2's fixed-width station list: id, position, name and years of record."""
     rows = []
-    for line in resp.text.splitlines():
+    for line in _station_list_text().splitlines():
         if len(line) < 81:
             continue
         try:
@@ -174,6 +193,45 @@ def _request(igra_id: str, start, end):
     raise DataError(f"IGRA2 download failed for {igra_id} after 3 tries ({last}); retry later")
 
 
+def _wyoming(wmo: str, when: pd.Timestamp):
+    """One Wyoming launch (DataFrame), or None when the service has no sounding for it."""
+    from siphon.simplewebservice.wyoming import WyomingUpperAir
+
+    last = None
+    for attempt in range(3):
+        try:
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                return WyomingUpperAir.request_data(when.to_pydatetime(), wmo)
+        except ValueError as exc:
+            # Siphon raises a bare ValueError; the HTTP status is in its cause.
+            cause = str(exc.__cause__ or exc)
+            if "404" in cause or "Unable to retrieve" in cause:
+                return None
+            last = cause.strip().splitlines()[-1] if cause.strip() else repr(exc)
+        except Exception as exc:  # noqa: BLE001 — transport errors are retried
+            last = exc
+        time.sleep(10 * (attempt + 1))
+    raise DataError(
+        f"Wyoming sounding service unreachable for {wmo} at {when:%Y-%m-%d %H} UTC after 3 tries "
+        f"({last}); it is a shared service that is sometimes overloaded: retry later, or use "
+        "--source igra2"
+    )
+
+
+def _wyoming_times(start, end, after=None, recent_only=False) -> list[pd.Timestamp]:
+    """00 and 12 UTC launch times in the window, up to now (and after ``after``)."""
+    now = pd.Timestamp.now(tz="UTC").tz_localize(None)
+    times = pd.date_range(
+        pd.Timestamp(start), pd.Timestamp(end) + pd.Timedelta(hours=12), freq="12h"
+    )
+    keep = [t for t in times if t <= now and (after is None or t > after)]
+    if recent_only:
+        # IGRA2 is ~2 days behind: Wyoming only fills that gap, not missing launches.
+        keep = [t for t in keep if t >= now - pd.Timedelta(days=3)]
+    return keep
+
+
 def _to_levels(df: pd.DataFrame, units: dict, grid: np.ndarray, mu, log_interpolate_1d):
     """One launch on the pressure grid, per variable over its own valid levels."""
     p = mu.Quantity(df["pressure"].to_numpy(float), units.get("pressure", "hPa")).m_as("hPa")
@@ -192,7 +250,12 @@ def _to_levels(df: pd.DataFrame, units: dict, grid: np.ndarray, mu, log_interpol
             res = np.asarray(log_interpolate_1d(grid, pp, vv), dtype=float)
             res[(grid > pp.max()) | (grid < pp.min())] = np.nan  # no extrapolation
             out[name] = res
-    sfc = df[df["lvltyp2"] == 1] if "lvltyp2" in df else df.iloc[:0]
+    if "lvltyp2" in df:  # IGRA2 flags the surface level
+        sfc = df[df["lvltyp2"] == 1]
+    elif df["pressure"].notna().any():  # Wyoming: the surface is the highest pressure
+        sfc = df.loc[[df["pressure"].idxmax()]]
+    else:
+        sfc = df.iloc[:0]
     if not sfc.empty:
         row = sfc.iloc[0]
         out["sp"] = mu.Quantity(float(row["pressure"]), units.get("pressure", "hPa")).m_as("hPa")
@@ -236,14 +299,26 @@ def _grid(levels: str) -> np.ndarray:
     default="10",
     help="Pressure grid: a step in hPa from 1050 to 100 (default 10), 'mandatory', or a list.",
 )
-def fetch(start_time, end_time, bbox, station, levels, **kwargs):
-    """Fetch observed radiosonde soundings from NOAA's IGRA2 archive (via Siphon) as a station Zarr.
+@weather_skill.argument(
+    "--source",
+    choices=("auto", "igra2", "wyoming"),
+    default="auto",
+    help=(
+        "auto (default): IGRA2, plus Wyoming for the last ~3 days IGRA2 does not have yet; "
+        "igra2 or wyoming: that source only."
+    ),
+)
+def fetch(start_time, end_time, bbox, station, levels, source, **kwargs):
+    """Fetch observed radiosonde soundings (IGRA2 archive, or the Wyoming service) via Siphon.
 
     Every launch of the chosen stations (WMO numbers, IGRA2 ids, or all
     stations in --bbox) in the date range: temperature, dewpoint, wind and
     geopotential height on a common pressure grid, plus the launch-site
-    pressure, temperature and dewpoint. The layout feeds
-    sounding-indices-metpy and plot-skewt-metpy directly.
+    pressure, temperature and dewpoint. NOAA's quality-controlled IGRA2
+    archive is the default; the University of Wyoming service fills the
+    last days IGRA2 has not received yet, or is used alone with --source
+    wyoming (high vertical resolution, one slow request per launch). The
+    layout feeds sounding-indices-metpy and plot-skewt-metpy directly.
     """
     import metpy
     import siphon
@@ -271,29 +346,77 @@ def fetch(start_time, end_time, bbox, station, levels, **kwargs):
         file=sys.stderr,
     )
 
-    launches = {}  # (station_id, time) -> profile dict
+    launches = {}  # (station_id, time) -> (profile dict, source)
     for rec in picked.itertuples():
-        if rec.last_year < start_time.year or rec.first_year > end_time.year:
+        ended = rec.last_year < start_time.year or rec.first_year > end_time.year
+        if ended and source != "wyoming":
             print(
                 f"sounding-fetch: {rec.station_id} {rec.name} has records only for "
                 f"{rec.first_year}-{rec.last_year}; skipped",
                 file=sys.stderr,
             )
             continue
-        res = _request(rec.station_id, start_time, end_time)
-        if res is None:
+        latest = None
+        igra2_down = False
+        if source in ("auto", "igra2"):
+            try:
+                res = _request(rec.station_id, start_time, end_time)
+            except DataError as exc:
+                if source == "igra2":
+                    raise
+                # auto: Wyoming is the backup for the whole window while IGRA2 is out.
+                print(f"sounding-fetch: {exc}; trying Wyoming for every launch", file=sys.stderr)
+                igra2_down, res = True, None
+            if res is not None:
+                df, _header = res
+                units = getattr(df, "units", {}) or {}
+                for when, one in df.groupby("date"):
+                    when = pd.Timestamp(when)
+                    launches[(rec.station_id, when)] = (
+                        _to_levels(one, units, grid, mu, log_interpolate_1d),
+                        "igra2",
+                    )
+                    latest = when if latest is None else max(latest, when)
+        if source == "igra2":
             continue
-        df, _header = res
-        units = getattr(df, "units", {}) or {}
-        for when, one in df.groupby("date"):
-            launches[(rec.station_id, pd.Timestamp(when))] = _to_levels(
-                one, units, grid, mu, log_interpolate_1d
+        # Wyoming takes WMO numbers: IGRA2 ids of the WMO network end in one.
+        if rec.station_id[2] != "M":
+            print(
+                f"sounding-fetch: {rec.station_id} has no WMO number; no Wyoming request",
+                file=sys.stderr,
+            )
+            continue
+        wmo = rec.station_id[-5:]
+        times = _wyoming_times(
+            start_time, end_time, after=latest, recent_only=source == "auto" and not igra2_down
+        )
+        if not times:
+            continue
+        print(
+            f"sounding-fetch: Wyoming, {wmo}: {len(times)} launch request(s), ~20 s each",
+            file=sys.stderr,
+        )
+        for when in times:
+            try:
+                df = _wyoming(wmo, when)
+            except DataError as exc:
+                if source == "wyoming":
+                    raise
+                print(f"sounding-fetch: {exc}; keeping the IGRA2 launches", file=sys.stderr)
+                break
+            if df is None or df.empty:
+                continue
+            units = getattr(df, "units", {}) or {}
+            launches[(rec.station_id, when)] = (
+                _to_levels(df, units, grid, mu, log_interpolate_1d),
+                "wyoming",
             )
     if not launches:
         raise DataError(
-            f"no launches for {', '.join(picked['station_id'])} in {start_time}..{end_time}. Many "
-            "stations launch irregularly or have stopped (IGRA2's list gives each station's last "
-            "year); widen the window or try another station"
+            f"no launches for {', '.join(picked['station_id'])} in {start_time}..{end_time} "
+            f"(--source {source}). Many stations launch irregularly or have stopped (IGRA2's list "
+            "gives each station's last year); widen the window, try another station, or another "
+            "--source"
         )
 
     have = sorted({sid for sid, _ in launches})
@@ -302,10 +425,12 @@ def fetch(start_time, end_time, bbox, station, levels, **kwargs):
     shape3 = (len(have), len(times), grid.size)
     data = {name: np.full(shape3, np.nan) for name in LEVEL_VARS}
     data |= {name: np.full(shape3[:2], np.nan) for name in ("sp", "t2m", "d2m")}
+    origin = np.full(shape3[:2], "", dtype=object)
     s_index = {s: i for i, s in enumerate(have)}
     t_index = {t: j for j, t in enumerate(times)}
-    for (sid, when), prof in launches.items():
+    for (sid, when), (prof, src) in launches.items():
         i, j = s_index[sid], t_index[when]
+        origin[i, j] = src
         for name in LEVEL_VARS:
             data[name][i, j] = prof[name]
         for name in ("sp", "t2m", "d2m"):
@@ -342,6 +467,11 @@ def fetch(start_time, end_time, bbox, station, levels, **kwargs):
                 },
             ),
             "name": ("station_id", meta["name"].astype(str).to_numpy()),
+            "source": (
+                ("station_id", "time"),
+                origin.astype(str),
+                {"long_name": "where each launch came from: igra2, wyoming, or empty (none)"},
+            ),
         },
     )
     stamp_cf_dsg(
@@ -353,19 +483,30 @@ def fetch(start_time, end_time, bbox, station, levels, **kwargs):
     ds.attrs.update(
         Conventions="CF-1.13",
         featureType="timeSeriesProfile",
-        title="Radiosonde soundings (IGRA2)",
-        source="NOAA NCEI Integrated Global Radiosonde Archive v2 (IGRA2), read with Siphon; "
-        "interpolated in log-pressure with MetPy",
-        institution="NOAA National Centers for Environmental Information",
-        references="https://www.ncei.noaa.gov/products/weather-balloon/integrated-global-radiosonde-archive",
-        history=f"{datetime.now(UTC).isoformat()} sounding-fetch {start_time}..{end_time}",
-        weather_skills_source="igra2",
+        title="Radiosonde soundings",
+        source="NOAA NCEI Integrated Global Radiosonde Archive v2 (IGRA2) and/or the University "
+        "of Wyoming sounding service, read with Siphon; interpolated in log-pressure with MetPy",
+        institution="NOAA National Centers for Environmental Information; University of Wyoming",
+        references=(
+            "https://www.ncei.noaa.gov/products/weather-balloon/integrated-global-radiosonde-archive "
+            "https://weather.uwyo.edu/upperair/sounding.shtml"
+        ),
+        history=(
+            f"{datetime.now(UTC).isoformat()} sounding-fetch {start_time}..{end_time} "
+            f"--source {source}"
+        ),
+        weather_skills_source="+".join(sorted({src for _, src in launches.values()})),
         siphon_version=siphon.__version__,
         metpy_version=metpy.__version__,
     )
     verify_cf_dsg(ds)
+    counts = {}
+    for (sid, _when), (_prof, src) in launches.items():
+        counts.setdefault(sid, {}).setdefault(src, 0)
+        counts[sid][src] += 1
     per_station = ", ".join(
-        f"{sid} {int(ds['t'].sel(station_id=sid).notnull().any('level').sum())}" for sid in have
+        f"{sid} " + " + ".join(f"{n} {src}" for src, n in sorted(counts[sid].items()))
+        for sid in have
     )
     print(
         f"sounding-fetch: launches per station: {per_station}; {grid.size} levels", file=sys.stderr

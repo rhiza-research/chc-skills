@@ -178,11 +178,17 @@ weather-skills transforms and plotters when those are available (for example
   (temperature, dewpoint, coded pressure, wind barb, cloud cover, weather
   symbol); fullest with `metar-fetch` data. Use `--min-spacing 25` or so on
   country maps, and `--time` for anything but the latest reports.
-- **`sounding-fetch`** gets observed radiosonde soundings (IGRA2, via Siphon;
-  ~2 days behind) by WMO number or bbox, on a pressure grid with the launch-site
-  `sp`/`t2m`/`d2m`, ready for `sounding-indices-metpy` and `plot-skewt-metpy`
-  (`--station ID --isel time=N`). In Kenya only Nairobi/Dagoretti (63741) has
-  recent launches, and its IGRA2 record ends in October 2025: say so rather
+- **`sounding-fetch`** gets observed radiosonde soundings via Siphon by WMO
+  number or bbox, on a pressure grid with the launch-site `sp`/`t2m`/`d2m`,
+  ready for `sounding-indices-metpy` and `plot-skewt-metpy` (`--station ID
+  --isel time=N`). It prefers NOAA's quality-controlled IGRA2 archive (~2 days
+  behind) and by default fills the last days from the University of Wyoming
+  service (within hours, high vertical detail, unchecked, slow, sometimes
+  overloaded); each launch's `source` says which. When the user wants the very
+  latest soundings or more vertical detail, or a result came from Wyoming, tell
+  them Wyoming exists with these trade-offs (`--source wyoming` uses it alone).
+  In Kenya only Nairobi/Dagoretti (63741) has recent launches; its IGRA2 record
+  ends in October 2025 and Wyoming has nothing recent either: say so rather
   than presenting a model profile as observed.
 - **`resolve-chc-region`** turns a bundled CHC region into an `N/W/S/E`
   bbox and, with `--geojson`, its boundary polygon: the **Tana River basin**
