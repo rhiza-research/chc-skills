@@ -87,6 +87,7 @@ def mod(monkeypatch):
         return _igra([_launch("2025-04-13"), _launch("2025-04-14", warm=2.0)])
 
     monkeypatch.setattr(module, "_station_list", lambda: STATIONS)
+    monkeypatch.setattr(module, "_igra2_unreachable", lambda: None)
     monkeypatch.setattr(module, "_request", fake_request)
     wyoming_calls = []
 
@@ -364,5 +365,145 @@ def test_station_list_cache(mod, monkeypatch, tmp_path, capsys):
         raise requests.ConnectTimeout("timed out")
 
     monkeypatch.setattr(mod.requests, "get", unreachable)
+    monkeypatch.setattr(mod.requests, "head", unreachable)
     assert mod._station_list_text() == "cached list"
     assert "using the cached IGRA2 station list" in capsys.readouterr().err
+
+
+# --- outages: the real _request/_wyoming with Siphon's classes replaced ---
+
+
+def _http_error(code):
+    """What Siphon raises: a ValueError caused by an HTTPError with the status in its text."""
+    import requests
+
+    try:
+        raise requests.HTTPError(f"Error accessing x\nServer Error ({code: d}: busy)")
+    except requests.HTTPError as cause:
+        try:
+            raise ValueError("No data available") from cause
+        except ValueError as exc:
+            return exc
+
+
+def _timeout():
+    import requests
+
+    return requests.ConnectTimeout(
+        "HTTPSConnectionPool(host='www1.ncdc.noaa.gov', port=443): Max retries exceeded "
+        "(Caused by ConnectTimeoutError(...))"
+    )
+
+
+@pytest.fixture
+def raw(monkeypatch):
+    from siphon.simplewebservice.igra2 import IGRAUpperAir
+    from siphon.simplewebservice.wyoming import WyomingUpperAir
+
+    module = load_skill("sounding-fetch", "sounding_fetch")
+    two = pd.concat(
+        [STATIONS.iloc[:1], STATIONS.iloc[:1].assign(station_id="KEM00063742", name="TWO")]
+    ).assign(last_year=2026)
+    monkeypatch.setattr(module, "_station_list", lambda: two)
+    monkeypatch.setattr(module, "_igra2_unreachable", lambda: None)
+    monkeypatch.setattr(module.time, "sleep", lambda s: None)
+    module.igra_calls, module.wyoming_calls = [], []
+    module.igra_result = lambda igra_id: _igra([_launch("2025-04-13")])
+    module.wyoming_result = lambda wmo, when: _wyoming_launch()
+
+    def igra(window, igra_id):
+        module.igra_calls.append(igra_id)
+        return module.igra_result(igra_id)
+
+    def wyoming(when, wmo):
+        module.wyoming_calls.append((wmo, when))
+        return module.wyoming_result(wmo, when)
+
+    monkeypatch.setattr(IGRAUpperAir, "request_data", igra)
+    monkeypatch.setattr(WyomingUpperAir, "request_data", wyoming)
+    return module
+
+
+def _raise(exc):
+    def fn(*args):
+        raise exc
+
+    return fn
+
+
+def test_connection_timeout_is_not_retried(raw):
+    raw.igra_result = _raise(_timeout())
+    with pytest.raises(raw._Unreachable):
+        raw._request("KEM00063741", "2025-04-13", "2025-04-14")
+    assert raw.igra_calls == ["KEM00063741"]  # one try, no retries
+
+
+def test_busy_igra2_is_retried_then_fails(raw):
+    raw.igra_result = _raise(_http_error(503))
+    with pytest.raises(raw.DataError, match="HTTP 503"):
+        raw._request("KEM00063741", "2025-04-13", "2025-04-14")
+    assert len(raw.igra_calls) == 3  # a 503 is not "no data"
+
+
+def test_igra2_404_is_no_data(raw):
+    raw.igra_result = _raise(_http_error(404))
+    assert raw._request("KEM00063741", "2025-04-13", "2025-04-14") is None
+    assert len(raw.igra_calls) == 1
+
+
+def test_igra2_down_is_skipped_for_later_stations(raw, tmp_path, capsys):
+    raw.igra_result = _raise(_timeout())
+    ds = xr.open_zarr(
+        _fetch(raw, tmp_path, "--station", "KEM00063741", "--station", "KEM00063742"),
+        consolidated=True,
+    )
+    assert raw.igra_calls == ["KEM00063741"]  # the second station does not wait again
+    err = capsys.readouterr().err
+    assert err.count("trying Wyoming for every launch") == 1
+    assert {w for w, _ in raw.wyoming_calls} == {"63741", "63742"}
+    assert set(ds["source"].values.ravel()) == {"wyoming"}
+
+
+def test_igra2_probe_failure_goes_straight_to_wyoming(raw, monkeypatch, tmp_path):
+    monkeypatch.setattr(raw, "_igra2_unreachable", lambda: "timed out")
+    _fetch(raw, tmp_path, "--station", "63741")
+    assert raw.igra_calls == []
+    assert len(raw.wyoming_calls) == 4
+
+
+def test_wyoming_down_is_asked_once(raw, tmp_path, capsys):
+    today = pd.Timestamp.now(tz="UTC").tz_localize(None).normalize()
+    start = today - pd.Timedelta(days=1)
+    raw.igra_result = lambda igra_id: _igra([_launch(start)])
+    raw.wyoming_result = _raise(_timeout())
+    out = tmp_path / "snd.zarr"
+    run_skill(
+        raw.fetch,
+        "--start-time",
+        str(start.date()),
+        "--end-time",
+        str(today.date()),
+        "--station",
+        "KEM00063741",
+        "--station",
+        "KEM00063742",
+        "-o",
+        str(out),
+    )
+    assert len(raw.wyoming_calls) == 1  # unreachable: no retry, no second station
+    assert "Wyoming skipped for the rest of this run" in capsys.readouterr().err
+    ds = xr.open_zarr(out, consolidated=True)
+    assert set(ds["source"].values.ravel()) == {"igra2"}
+
+
+def test_no_answer_has_a_wall_clock_limit(mod, monkeypatch):
+    import threading
+
+    gate = threading.Event()
+    monkeypatch.setattr(mod.requests, "head", lambda *a, **k: gate.wait(5))
+    try:
+        assert mod._no_answer("https://example.invalid/", seconds=0.2) == "no answer within 0 s"
+    finally:
+        gate.set()
+    monkeypatch.setattr(mod.requests, "head", lambda *a, **k: None)
+    assert mod._no_answer("https://example.invalid/") is None

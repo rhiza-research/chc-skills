@@ -14,7 +14,9 @@
 
 from __future__ import annotations
 
+import re
 import sys
+import threading
 import time
 import warnings
 from datetime import UTC, datetime
@@ -91,12 +93,44 @@ LEVEL_VARS = {
 TARGET_UNITS = {"t": "degC", "dewpoint": "degC", "u": "m/s", "v": "m/s", "gh": "m"}
 
 
+def _no_answer(url: str, seconds: float = 30) -> str | None:
+    """Why ``url``'s server gives no answer within ``seconds``, or None when it answers.
+
+    A wall-clock limit: requests' connect timeout applies per address, and a
+    host with several addresses can take minutes to fail.
+    """
+    result = {}
+
+    def probe():
+        try:
+            requests.head(url, timeout=(10, 20), allow_redirects=True)
+        except requests.ConnectionError as exc:
+            result["error"] = _short(exc)
+        except requests.RequestException:
+            pass  # it answered, slowly: let the download try
+
+    thread = threading.Thread(target=probe, daemon=True)
+    thread.start()
+    thread.join(seconds)
+    if thread.is_alive():
+        return f"no answer within {seconds:.0f} s"
+    return result.get("error")
+
+
 def _station_list_text() -> str:
     """The station list, from a cache refreshed weekly; a stale cache covers NCEI outages."""
     cache = Path.home() / ".cache" / "weather-skills" / "igra2-station-list.txt"
     fresh = cache.is_file() and time.time() - cache.stat().st_mtime < 7 * 86400
     if fresh:
         return cache.read_text()
+    if cache.is_file():
+        reason = _no_answer(STATION_LIST)
+        if reason:
+            print(
+                f"sounding-fetch: NCEI unreachable ({reason}); using the cached IGRA2 station list",
+                file=sys.stderr,
+            )
+            return cache.read_text()
     try:
         resp = requests.get(STATION_LIST, timeout=(15, 120))
         resp.raise_for_status()
@@ -167,6 +201,59 @@ def _resolve(stations: pd.DataFrame, wanted: list[str], bbox, start, end) -> pd.
     return out.reset_index(drop=True)
 
 
+# Siphon's IGRA2 base URL; a HEAD request tells within seconds whether the
+# server answers at all (Siphon's own downloads have no timeout).
+IGRA2_BASE = "https://www1.ncdc.noaa.gov/pub/data/igra/"
+# "Busy" answers worth retrying; anything that cannot connect is not retried.
+BUSY = {429, 500, 502, 503, 504}
+_NO_CONNECTION = ("ConnectTimeoutError", "NewConnectionError", "NameResolutionError")
+
+
+class _Unreachable(DataError):
+    """The server could not be reached at all, so retrying will not help."""
+
+
+def _chain(exc):
+    """``exc`` and its causes (at most 10 deep)."""
+    seen = []
+    while exc is not None and len(seen) < 10 and exc not in seen:
+        seen.append(exc)
+        exc = exc.__cause__ or exc.__context__
+    return seen
+
+
+def _status(exc) -> int | None:
+    """The HTTP status in ``exc`` or its causes (Siphon puts it only in the message)."""
+    for one in _chain(exc):
+        code = getattr(getattr(one, "response", None), "status_code", None)
+        if code is not None:
+            return int(code)
+        found = re.search(r"Server Error \(\s*(\d{3})", str(one))
+        if found:
+            return int(found.group(1))
+    return None
+
+
+def _unreachable(exc) -> bool:
+    """True when no connection was made (timeout, refused, DNS)."""
+    for one in _chain(exc):
+        if isinstance(one, requests.ConnectTimeout):
+            return True
+        if type(one).__name__ in _NO_CONNECTION or any(n in str(one) for n in _NO_CONNECTION):
+            return True
+    return False
+
+
+def _short(exc) -> str:
+    text = str(exc).strip()
+    return (text.splitlines()[-1] if text else repr(exc))[:200]
+
+
+def _igra2_unreachable() -> str | None:
+    """Why IGRA2's download server cannot be reached, or None when it answers."""
+    return _no_answer(IGRA2_BASE)
+
+
 def _request(igra_id: str, start, end):
     """All launches of one station in the window: (levels, header), or None."""
     from siphon.simplewebservice.igra2 import IGRAUpperAir
@@ -182,13 +269,19 @@ def _request(igra_id: str, start, end):
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 return IGRAUpperAir.request_data(window, igra_id)
-        except ValueError as exc:
-            # Siphon's "nothing in this window": not a transport error, so no retry.
-            if any(text in str(exc).lower() for text in ("no dates match", "no data")):
+        except Exception as exc:  # noqa: BLE001 — sorted below
+            if _unreachable(exc):
+                raise _Unreachable(
+                    f"IGRA2 server unreachable for {igra_id} ({_short(exc)})"
+                ) from None
+            code = _status(exc)
+            if code == 404:
                 return None
-            last = exc
-        except Exception as exc:  # noqa: BLE001 — transport errors are retried
-            last = exc
+            # Siphon's "nothing in this window" (no HTTP error behind it): no retry.
+            no_data = ("no dates match", "no data")
+            if code is None and any(text in str(exc).lower() for text in no_data):
+                return None
+            last = f"HTTP {code}" if code else _short(exc)
         time.sleep(5 * (attempt + 1))
     raise DataError(f"IGRA2 download failed for {igra_id} after 3 tries ({last}); retry later")
 
@@ -203,14 +296,16 @@ def _wyoming(wmo: str, when: pd.Timestamp):
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore")
                 return WyomingUpperAir.request_data(when.to_pydatetime(), wmo)
-        except ValueError as exc:
+        except Exception as exc:  # noqa: BLE001 — sorted below
+            if _unreachable(exc):
+                raise _Unreachable(
+                    f"Wyoming sounding service unreachable ({_short(exc)})"
+                ) from None
             # Siphon raises a bare ValueError; the HTTP status is in its cause.
-            cause = str(exc.__cause__ or exc)
-            if "404" in cause or "Unable to retrieve" in cause:
+            code = _status(exc)
+            if code == 404 or "Unable to retrieve" in str(exc.__cause__ or exc):
                 return None
-            last = cause.strip().splitlines()[-1] if cause.strip() else repr(exc)
-        except Exception as exc:  # noqa: BLE001 — transport errors are retried
-            last = exc
+            last = f"HTTP {code}" if code else _short(exc.__cause__ or exc)
         time.sleep(10 * (attempt + 1))
     raise DataError(
         f"Wyoming sounding service unreachable for {wmo} at {when:%Y-%m-%d %H} UTC after 3 tries "
@@ -347,6 +442,8 @@ def fetch(start_time, end_time, bbox, station, levels, source, **kwargs):
     )
 
     launches = {}  # (station_id, time) -> (profile dict, source)
+    # An outage holds for the whole run: later stations do not wait through it again.
+    igra2_down = wyoming_down = probed = False
     for rec in picked.itertuples():
         ended = rec.last_year < start_time.year or rec.first_year > end_time.year
         if ended and source != "wyoming":
@@ -357,16 +454,25 @@ def fetch(start_time, end_time, bbox, station, levels, source, **kwargs):
             )
             continue
         latest = None
-        igra2_down = False
-        if source in ("auto", "igra2"):
+        if source in ("auto", "igra2") and not igra2_down:
+            res = None
             try:
+                if not probed:
+                    probed = True
+                    reason = _igra2_unreachable()
+                    if reason:
+                        raise _Unreachable(f"IGRA2 server ({IGRA2_BASE}) unreachable ({reason})")
                 res = _request(rec.station_id, start_time, end_time)
             except DataError as exc:
                 if source == "igra2":
-                    raise
+                    raise DataError(f"{exc}; retry later or use --source wyoming") from None
                 # auto: Wyoming is the backup for the whole window while IGRA2 is out.
-                print(f"sounding-fetch: {exc}; trying Wyoming for every launch", file=sys.stderr)
-                igra2_down, res = True, None
+                print(
+                    f"sounding-fetch: {exc}; trying Wyoming for every launch "
+                    "(IGRA2 skipped for the rest of this run)",
+                    file=sys.stderr,
+                )
+                igra2_down = True
             if res is not None:
                 df, _header = res
                 units = getattr(df, "units", {}) or {}
@@ -377,7 +483,7 @@ def fetch(start_time, end_time, bbox, station, levels, source, **kwargs):
                         "igra2",
                     )
                     latest = when if latest is None else max(latest, when)
-        if source == "igra2":
+        if source == "igra2" or wyoming_down:
             continue
         # Wyoming takes WMO numbers: IGRA2 ids of the WMO network end in one.
         if rec.station_id[2] != "M":
@@ -402,7 +508,12 @@ def fetch(start_time, end_time, bbox, station, levels, source, **kwargs):
             except DataError as exc:
                 if source == "wyoming":
                     raise
-                print(f"sounding-fetch: {exc}; keeping the IGRA2 launches", file=sys.stderr)
+                print(
+                    f"sounding-fetch: {exc}; keeping the IGRA2 launches "
+                    "(Wyoming skipped for the rest of this run)",
+                    file=sys.stderr,
+                )
+                wyoming_down = True
                 break
             if df is None or df.empty:
                 continue

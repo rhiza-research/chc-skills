@@ -41,6 +41,8 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/sounding_fetch.py --start-time YYYY-MM-DD --e
 
 IGRA2 is the default: it is checked, complete for past dates, and fast over date ranges. With `--source auto` the skill takes IGRA2, then asks Wyoming only for 00/12 UTC launches **after IGRA2's latest one and within the last 3 days**, the gap IGRA2 has not received yet. Stations that simply did not launch never trigger Wyoming requests. If IGRA2 cannot be reached at all, `auto` falls back to Wyoming for every launch in the window. If Wyoming is overloaded, the IGRA2 launches are kept and stderr says so.
 
+An outage holds for the whole run. A server that does not answer at all (connection timeout, refused) is not retried, and the other stations of the run skip it instead of waiting again. IGRA2 is checked with a quick request (15 s) before the first download. Only "busy" answers (HTTP 429/5xx) are retried, 3 times.
+
 `--source wyoming` uses only Wyoming: for the most recent hours, or when the full vertical detail of a launch matters (one detailed Skew-T, inversions, thin moist or dry layers; set a finer `--levels`, e.g. `2`). `--source igra2` uses only IGRA2.
 
 The same launch from both sources gives the same picture: Nairobi on 14 April 2025 00 UTC gave CAPE 731 J kg-1 from both, identical lifted index (−2.7 K) and LCL (810 hPa), and precipitable water 28.6 vs 28.7 mm.
@@ -71,7 +73,7 @@ The names match what `sounding-indices-metpy`, `plot-skewt-metpy` and `vertical-
 - Neither `--station` nor `--bbox` → exit 2.
 - A station not in the IGRA2 list → exit 2.
 - No launches in the window (stopped or irregular stations) → exit 1; widen the window, pick another station, or try the other `--source`.
-- `--source igra2` with IGRA2 unreachable, or `--source wyoming` with Wyoming overloaded, after 3 tries → exit 1; retry later or use the other source.
+- `--source igra2` with IGRA2 unreachable, or `--source wyoming` with Wyoming unreachable or still busy after 3 tries → exit 1; retry later or use the other source.
 
 ### Examples
 ```bash
