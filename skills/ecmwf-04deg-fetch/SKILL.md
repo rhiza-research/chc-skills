@@ -6,20 +6,8 @@ compatibility: "Requires Python 3.12 and uv. Reads private GCS gs://sheerwater-d
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py *)
 metadata:
   catalog-group: fetchers
-  variables:
-    - tp
-  openclaw:
-    requires:
-      env:
-        - GCLOUD_SERVICE_CREDENTIALS
-    primaryEnv: GCLOUD_SERVICE_CREDENTIALS
-    envVars:
-      - name: GCLOUD_SERVICE_CREDENTIALS
-        description: Full contents of a GCP service-account key JSON with read access to gs://sheerwater-datalake/ecmwf-0_4. Use this when the runtime can only inject secret values, not files.
-      - name: NEURAL_GCM_SERVICE_CREDENTIALS
-        description: The same key JSON under the name pbc-fetch and neuralgcm-fetch read. Used only if GCLOUD_SERVICE_CREDENTIALS is unset.
-      - name: GOOGLE_APPLICATION_CREDENTIALS
-        description: Path to a GCP service-account JSON file that can read gs://sheerwater-datalake/ecmwf-0_4. Used only if neither key JSON variable is set.
+  variables: "tp"
+  required-env: "GCLOUD_SERVICE_CREDENTIALS"
 ---
 
 # ecmwf-04deg-fetch
