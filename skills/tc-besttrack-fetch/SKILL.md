@@ -73,6 +73,7 @@ The tc-track trajectory layout (`featureType=trajectory`) on `(track, obs)`:
 | `wind_max` | m s-1 | maximum sustained wind (the official estimate; averaging period in `tc_wind_averaging`) |
 | `category` | 1 | tc-track's intensity class: 0 TD (<34 kt), 1 TS, 2 Cat 1, 3 Cat 2, 4 Cat 3+ (≥96 kt) |
 | `storm_type` | text | official type per fix: TD, TS, HU, TY, EX, SS, LO, DB, … |
+| `phase` | text | from the type: `tropical` (TD/TS/HU/TY/ST/TC/SD/SS), `extratropical` (EX/ET), `pre-genesis` (LO/DB/WV before the first tropical fix) or `remnant` (after it); the labels tc-phase-space uses for model tracks |
 
 Missing pressure or wind is NaN. Attrs give the source (`tc_source`, `tc_source_info`) and the storm id, name and year, and `tc_notes` records anything that fell back.
 

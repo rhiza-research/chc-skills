@@ -96,6 +96,9 @@ MODEL_GROUPS = {
     "gfs": ["AVNO"],
     "official": ["OFCL"],
 }
+# Official system types -> the `phase` labels tc-phase-space writes for model tracks.
+TROPICAL_TYPES = {"TD", "TS", "HU", "TY", "ST", "TC", "SD", "SS", "MH", "TS/TY"}
+EXTRATROPICAL_TYPES = {"EX", "ET"}
 CACHE_DAYS = 7.0
 ACTIVE_DAYS = 7.0  # an IBTrACS ACTIVE storm counts as current when seen this recently
 USER_AGENT = "chc-skills tc-besttrack-fetch"
@@ -108,6 +111,31 @@ def wind_category(wind_ms):
     wind_ms = np.asarray(wind_ms, dtype=float)
     cat = np.digitize(wind_ms / KT_TO_MS, CATEGORY_KT).astype(float)
     return np.where(np.isfinite(wind_ms), cat, np.nan)
+
+
+def phase_from_types(types):
+    """pre-genesis / tropical / extratropical / remnant per fix from official system types.
+
+    Lows, disturbances and waves (LO, DB, WV, ...) before the first tropical fix are
+    pre-genesis, after it remnant; EX/ET are extratropical. A track without a tropical
+    fix is labelled by type alone.
+    """
+    import numpy as np
+
+    types = [str(t).strip().upper() for t in types]
+    tropical = np.array([t in TROPICAL_TYPES for t in types])
+    first = int(np.argmax(tropical)) if tropical.any() else len(types)
+    out = []
+    for k, t in enumerate(types):
+        if not t:
+            out.append("")
+        elif t in TROPICAL_TYPES:
+            out.append("tropical")
+        elif t in EXTRATROPICAL_TYPES:
+            out.append("extratropical")
+        else:
+            out.append("pre-genesis" if k < first else "remnant")
+    return out
 
 
 # --------------------------------------------------------------------------- cache
@@ -339,6 +367,16 @@ def to_dataset(rows, attrs):
                 dims,
                 types.astype(str),
                 {"long_name": "official system type (TD, TS, HU, TY, EX, SS, LO, DB, ...)"},
+            ),
+            "phase": (
+                dims,
+                np.array([phase_from_types(row) for row in types.astype(str)], dtype="<U13")
+                if n
+                else np.full(shape, "", dtype="<U13"),
+                {
+                    "long_name": "phase from the official type: pre-genesis, tropical, "
+                    "extratropical or remnant",
+                },
             ),
         },
         coords={

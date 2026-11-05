@@ -16,7 +16,7 @@ Computes Hart's cyclone phase space at every track point.
 
 ```bash
 uv run ${CLAUDE_SKILL_DIR}/scripts/tc_phase_space.py --tracks TRACKS.zarr -i GEOPOTENTIAL.zarr [-i MORE.zarr] \
-  [--no-smooth] [--tropical-only [--min-tropical-hours 24]] -o PHASE.zarr
+  [--no-smooth] [--tropical-only [--min-tropical-hours 24] [--keep-transition]] -o PHASE.zarr
 ```
 
 ### Arguments
@@ -24,10 +24,11 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/tc_phase_space.py --tracks TRACKS.zarr -i GEO
 - `--input`, `-i`: geopotential or geopotential height on pressure levels, from the same source as the tracks (same members and init). It may be one variable on a level dim (`gh`, `zg`, `z`, `geopotential`, …) or per-level variables (`z900`, `gh_600`, …). Units may be m or m2 s-2, and levels hPa or Pa. Repeat `-i` to combine stores.
 - `--no-smooth`: leave out Hart's 24 h running mean.
 - `--tropical-only`: keep only each track's tropical spell (see `tropical` below): from its first tropical point to extratropical transition, the first stretch of more than 12 h that is not tropical. Shorter non-tropical gaps stay in the spell. The first spell that is tropical for at least `--min-tropical-hours` (default 24) is kept; tracks without one are dropped. This removes extratropical and frontal lows and everything after extratropical transition, including a transitioned low that later turns warm and symmetric again (a warm seclusion).
+- `--keep-transition`: with `--tropical-only`, keep each track after its tropical spell ends instead of cutting it. Lows that were never tropical are still dropped, which is what removes the false positives; real storms keep their extratropical transition, labelled `extratropical` in `phase`.
 - `--output`, `-o`: output Zarr.
 
 ### Output
-The tracks with four variables added on `(track, obs)`:
+The tracks with five variables added on `(track, obs)`:
 
 | Variable | Meaning | Reading |
 |---|---|---|
@@ -35,6 +36,7 @@ The tracks with four variables added on `(track, obs)`:
 | `neg_vtl` | −VTL: slope of ΔZ = max(Z) − min(Z) within 500 km against ln p, over 900−600 hPa | > 0: lower warm core; < 0: cold core |
 | `neg_vtu` | −VTU: the same slope over 600−300 hPa | > 0: upper warm core |
 | `tropical` | 1 where B is below the threshold and −VTL > 0 (Hart's symmetric warm core), 0 elsewhere, NaN where either is missing | used by `--tropical-only` |
+| `phase` | `pre-genesis` (before the tropical spell), `tropical` (the spell), `extratropical` (after it), `non-tropical` (a track never tropical long enough) | drawn by `plot-tc-tracks`; `tc-strike-probability` counts only `tropical` by default |
 
 `B`, `neg_vtl` and `neg_vtu` are in m.
 

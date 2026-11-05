@@ -129,3 +129,22 @@ def test_forecast_rows_and_ensemble_numbers(mod):
 def test_bbox_basins(mod):
     assert mod._bbox_basins((-2.0, 30.0, -30.0, 60.0)) == ["south_indian"]
     assert "south_pacific" in mod._bbox_basins((-5.0, 170.0, -25.0, -170.0))
+
+
+def test_phase_from_official_types(mod):
+    got = mod.phase_from_types(["LO", "TD", "TS", "HU", "EX", "LO", ""])
+    assert got == [
+        "pre-genesis",
+        "tropical",
+        "tropical",
+        "tropical",
+        "extratropical",
+        "remnant",
+        "",
+    ]
+    assert mod.phase_from_types(["DB", "LO"]) == ["pre-genesis", "pre-genesis"]
+
+
+def test_best_track_has_phase(mod, cache, tmp_path):
+    ds = _fetch(mod, tmp_path, "--storm", "TestA", "--year", "2030", "--basin", "north_atlantic")
+    assert list(ds["phase"].values[0][:6]) == ["tropical"] * 6

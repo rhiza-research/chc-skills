@@ -25,6 +25,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/tc_strike_probability.py -i TRACKS.zarr (--bb
 - `--resolution`: degrees between grid points with `--bbox`. Default: `0.5`.
 - `--like`: a Zarr whose latitude/longitude grid the output uses.
 - `--radius`: strike radius in km. Default: `120`, the radius of ECMWF's strike-probability product. Larger radii (e.g. 300) map where the storm's wider wind and rain field may reach.
+- `--phase`: with a `phase` variable (from `tc-phase-space` or `tc-besttrack-fetch`), count only the `tropical` part of each track (default) or `all` of it. The extratropical part's wind field is far wider than a 120 km radius, so its strike probability says little; it is drawn as a track instead.
 - `--start`, `--end`: count only track points from or up to these times (`YYYY-MM-DD` or `YYYY-MM-DDTHH`, inclusive). Default: the whole track. For ECMWF's product (within 120 km in the next 240 h), pass the init and the init plus 10 days.
 - `--output`, `-o`: output Zarr.
 

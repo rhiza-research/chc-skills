@@ -351,13 +351,23 @@ def running_mean(values, hours, window=SMOOTH_HOURS):
     help=f"Hours a track must be tropical to be kept with --tropical-only "
     f"(default {MIN_TROPICAL_HOURS:g}).",
 )
-def tc_phase_space(tracks, ds, no_smooth, tropical_only, min_tropical_hours, **kwargs):
+@weather_skill.argument(
+    "--keep-transition",
+    action="store_true",
+    help="With --tropical-only, keep each track after its tropical spell ends (labelled "
+    "extratropical in `phase`) instead of cutting it there.",
+)
+def tc_phase_space(
+    tracks, ds, no_smooth, tropical_only, min_tropical_hours, keep_transition, **kwargs
+):
     """Add Hart (2003) cyclone phase space parameters (B, -VTL, -VTU) to tc-track tracks."""
     import numpy as np
     from weather_skills_core.standard_dataset import detect_spatial_dims
     from weather_skills_core.standard_utils import ensure_normalized_longitude
     from weather_skills_core.units import dequantify_dataset
 
+    if keep_transition and not tropical_only:
+        raise UsageError("--keep-transition goes with --tropical-only")
     tracks = dequantify_dataset(tracks)
     if not {"track", "obs"} <= set(tracks.dims) or "latitude" not in tracks.coords:
         raise UsageError("--tracks is not tc-track output (no track/obs dims)")
@@ -492,31 +502,81 @@ def tc_phase_space(tracks, ds, no_smooth, tropical_only, min_tropical_hours, **k
         phase_space_b_threshold_m=threshold,
         phase_space_reference="Hart 2003 (MWR 131:585)",
     )
+    spells = tropical_spells(tropical, t_time, min_tropical_hours)
+    res["phase"] = (
+        dims,
+        phase_labels(spells, t_time),
+        {
+            "long_name": "cyclone phase: pre-genesis, tropical (the tropical spell), "
+            "extratropical (after it ends), non-tropical (a track never tropical long enough)",
+            "coordinates": "time latitude longitude",
+        },
+    )
     if tropical_only:
-        res = _trim_tropical(res, tropical, t_time, min_tropical_hours)
+        res = _trim_tropical(res, spells, keep_transition)
         res.attrs["phase_space_tropical_only_min_hours"] = min_tropical_hours
+        res.attrs["phase_space_keep_transition"] = int(keep_transition)
+        what = "tropical spell and transition" if keep_transition else "tropical spell"
         print(
             f"kept {res.sizes['track']} of {n_track} tracks with at least "
-            f"{min_tropical_hours:g} h as a symmetric warm core",
+            f"{min_tropical_hours:g} h as a symmetric warm core ({what})",
             file=sys.stderr,
         )
     return res
 
 
-def _trim_tropical(res, tropical, t_time, min_hours):
-    """Blank the points outside each track's tropical span and drop tracks with none left."""
+def _ok_times(t_row):
     import numpy as np
 
-    keep = np.zeros(tropical.shape, bool)
+    if np.issubdtype(np.asarray(t_row).dtype, np.datetime64):
+        return ~np.isnat(t_row)
+    return np.array([t is not None for t in t_row])
+
+
+def tropical_spells(tropical, t_time, min_hours):
+    """Per track, the boolean mask of its tropical spell (see ``keep_tropical``)."""
+    import numpy as np
+
+    spells = np.zeros(tropical.shape, bool)
     for k in range(tropical.shape[0]):
-        ok = ~np.isnat(t_time[k]) if np.issubdtype(t_time.dtype, np.datetime64) else None
-        if ok is None:
-            ok = np.array([t is not None for t in t_time[k]])
+        ok = _ok_times(t_time[k])
         if ok.sum() == 0:
             continue
         hours = np.full(ok.size, np.nan)
         hours[ok] = _hours(t_time[k][ok])
-        keep[k] = keep_tropical(tropical[k] & ok, hours, min_hours)
+        spells[k] = keep_tropical(np.asarray(tropical[k], bool) & ok, hours, min_hours)
+    return spells
+
+
+def phase_labels(spells, t_time):
+    """pre-genesis / tropical / extratropical / non-tropical per point ('' without a fix)."""
+    import numpy as np
+
+    labels = np.full(spells.shape, "", dtype="<U13")
+    for k in range(spells.shape[0]):
+        ok = _ok_times(t_time[k])
+        idx = np.flatnonzero(spells[k])
+        if idx.size == 0:
+            labels[k][ok] = "non-tropical"
+            continue
+        pos = np.arange(ok.size)
+        labels[k][ok & (pos < idx[0])] = "pre-genesis"
+        labels[k][ok & (pos >= idx[0]) & (pos <= idx[-1])] = "tropical"
+        labels[k][ok & (pos > idx[-1])] = "extratropical"
+    return labels
+
+
+def _trim_tropical(res, spells, keep_transition=False):
+    """Blank the points outside each track's tropical spell (and, with ``keep_transition``,
+    keep what follows it) and drop tracks without a spell."""
+    import numpy as np
+
+    keep = spells.copy()
+    if keep_transition:
+        for k in range(keep.shape[0]):
+            idx = np.flatnonzero(spells[k])
+            if idx.size:
+                keep[k, idx[0] :] = _ok_times(res["time"].values[k])[idx[0] :]
     res = res.copy()
     for name, var in list(res.variables.items()):
         if var.dims != ("track", "obs"):
@@ -526,6 +586,8 @@ def _trim_tropical(res, tropical, t_time, min_hours):
             values[~keep] = np.datetime64("NaT", "ns")
         elif values.dtype == object:
             values[~keep] = None
+        elif values.dtype.kind in "US":
+            values[~keep] = ""
         else:
             values = np.where(keep, values, np.nan)
         if name in res.coords:

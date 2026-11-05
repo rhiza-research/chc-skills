@@ -90,6 +90,7 @@ Optional additions written by the other skills:
 | `match_distance_km`, `match_gap_hours` | track | tc-match | how the model track was matched |
 | `segment` | track, obs | tc-match --blend | `observed` or `forecast` |
 | `B`, `neg_vtl`, `neg_vtu`, `tropical` | track, obs | tc-phase-space | Hart phase space |
+| `phase` | track, obs | tc-phase-space, tc-besttrack-fetch | `pre-genesis`, `tropical`, `extratropical`, `remnant` or `non-tropical` |
 
 Standalone scripts cannot import each other, so the category edges and the great-circle helpers are copied into each skill; keep them identical.
 

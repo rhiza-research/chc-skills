@@ -223,3 +223,57 @@ def test_errors_plot_from_tc_verify(mods, tmp_path):
     with pytest.raises(SystemExit) as exc:
         run_skill(mods[3].plot_tc_tracks, "-i", str(model), "--kind", "errors", "-o", str(png))
     assert exc.value.code == 2
+
+
+def test_segment_classes_and_official_phases(mods):
+    post, pre = mods[3].segment_classes(["pre-genesis", "tropical", "tropical", "extratropical"])
+    assert post.tolist() == [False, False, True]
+    assert pre.tolist() == [True, False, False]
+    assert mods[3].phase_from_types(["DB", "TS", "EX", "LO"]) == [
+        "pre-genesis",
+        "tropical",
+        "extratropical",
+        "remnant",
+    ]
+
+
+def test_map_and_strike_with_extratropical_parts(mods, tmp_path):
+    _, _, model_ds, ref_ds = _official(tmp_path)
+    model_ds = model_ds.drop_vars("segment")
+    model_ds["phase"] = (("track", "obs"), np.array([["tropical"] * 8 + ["extratropical"] * 4] * 2))
+    ref_ds["storm_type"] = (
+        ("track", "obs"),
+        np.array([["TS"] * 9 + ["EX"] * 3, ["TS"] * 8 + [""] * 4]),
+    )
+    m = write_zarr(model_ds, tmp_path / "model_phase.zarr")
+    r = write_zarr(ref_ds, tmp_path / "ref_phase.zarr")
+    png = tmp_path / "phase_map.png"
+    run_skill(mods[3].plot_tc_tracks, "-i", str(m), "--reference", str(r), "-o", str(png))
+    assert png.stat().st_size > 10_000
+    sp = tmp_path / "sp.zarr"
+    run_skill(
+        mods[1].tc_strike_probability,
+        "-i",
+        str(m),
+        "--bbox",
+        "0/50/-30/80",
+        "--resolution",
+        "1",
+        "-o",
+        str(sp),
+    )
+    png2 = tmp_path / "phase_strike.png"
+    run_skill(
+        mods[3].plot_tc_tracks,
+        "-i",
+        str(m),
+        "--kind",
+        "strike",
+        "--strike-prob",
+        str(sp),
+        "--reference",
+        str(r),
+        "-o",
+        str(png2),
+    )
+    assert png2.stat().st_size > 10_000

@@ -116,3 +116,20 @@ def test_needs_one_grid(mod, tmp_path):
     with pytest.raises(SystemExit) as exc:
         run_skill(mod.tc_strike_probability, "-i", str(inp), "-o", str(tmp_path / "o.zarr"))
     assert exc.value.code == 2
+
+
+def test_only_the_tropical_part_counts_by_default(mod, tmp_path):
+    pts = [(-15.0, 60.0 - 2 * k) for k in range(6)]
+    ds = _tracks([(0, pts)], members=1)
+    ds["phase"] = (("track", "obs"), np.array([["tropical"] * 3 + ["extratropical"] * 3]))
+    inp = write_zarr(ds, tmp_path / "t.zarr")
+    out_path = tmp_path / "sp.zarr"
+    args = ("-i", str(inp), "--bbox", "-5/45/-25/65", "--resolution", "1", "-o", str(out_path))
+    run_skill(mod.tc_strike_probability, *args)
+    sp = xr.open_zarr(out_path)
+    assert sp["strike_probability"].sel(latitude=-15, longitude=58).item() == 100.0
+    assert sp["strike_probability"].sel(latitude=-15, longitude=50).item() == 0.0
+    assert sp.attrs["strike_phase"] == "tropical"
+    run_skill(mod.tc_strike_probability, *args, "--phase", "all")
+    sp = xr.open_zarr(out_path)
+    assert sp["strike_probability"].sel(latitude=-15, longitude=50).item() == 100.0

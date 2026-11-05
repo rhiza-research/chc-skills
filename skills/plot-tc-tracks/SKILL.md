@@ -54,6 +54,7 @@ The phase diagrams:
 - points are coloured by time, the start is marked A and the end Z, and the quadrants are labelled
 
 ### Notes
+- **Phases.** With a `phase` variable (`tc-phase-space`; `tc-besttrack-fetch`, or its `storm_type`), the extratropical and remnant parts of member tracks are grey dashed lines without wind-class colours, and pre-genesis or never-tropical parts are grey dotted. The control turns dotted, the ensemble mean grey dashed (where most of its members are post-tropical), and the best track dashed with hollow dots. The legend lists the styles that appear.
 - **Observed history.** Tracks from `tc-match --blend` carry an `observed` segment. Members, the control and the ensemble mean are drawn for the forecast part only; the observed history is drawn once, as the best track, or from `--reference` when given.
 - **Dateline.** Tracks crossing the dateline are drawn continuously.
 - **Errors.** `--kind strike` without `--strike-prob`, or `--strike-prob` with `--kind map`, exits 2. `--kind phase` exits 2 without B/−VTL/−VTU, for a track id that is not in the input, or for an input with no tracks. A map with no tracks exits 2 unless `--bbox` is given.

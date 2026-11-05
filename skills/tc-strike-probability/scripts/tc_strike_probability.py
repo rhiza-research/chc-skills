@@ -18,6 +18,7 @@
 from __future__ import annotations
 
 import math
+import sys
 
 from weather_skills_core import Dataset, UsageError, weather_skill
 
@@ -82,7 +83,7 @@ def densify(lat, lon, hours, step_km):
     )
 
 
-def strike_probability(tracks, lat, lon, radius_km, start=None, end=None):
+def strike_probability(tracks, lat, lon, radius_km, start=None, end=None, phases=None):
     """Percentage of members with a track within ``radius_km`` of each grid point.
 
     Args:
@@ -90,6 +91,7 @@ def strike_probability(tracks, lat, lon, radius_km, start=None, end=None):
         lat, lon: 1-D target grid coordinates.
         radius_km: strike radius.
         start, end: optional window bounds (same time type as the tracks), inclusive.
+        phases: with a ``phase`` variable, count only points in these phases (None: all).
 
     Returns:
         ``(prob, n_members)``: a (lat, lon) array in percent and the member count.
@@ -122,12 +124,12 @@ def strike_probability(tracks, lat, lon, radius_km, start=None, end=None):
         if track_member[k] not in index:
             continue
         hours = _hours(times[k], ref) if ref is not None else np.full(times.shape[1], np.nan)
-        dlat, dlon, dh = densify(
-            tracks["latitude"].values[k].astype(float),
-            tracks["longitude"].values[k].astype(float),
-            hours,
-            radius_km / 4,
-        )
+        lat_k = tracks["latitude"].values[k].astype(float)
+        lon_k = tracks["longitude"].values[k].astype(float)
+        if phases is not None and "phase" in tracks:
+            counted = np.isin(tracks["phase"].values[k].astype(str), list(phases))
+            lat_k, lon_k = np.where(counted, lat_k, np.nan), np.where(counted, lon_k, np.nan)
+        dlat, dlon, dh = densify(lat_k, lon_k, hours, radius_km / 4)
         keep = np.ones(dh.size, bool)
         if lo_h is not None:
             keep &= dh >= lo_h - 1e-6
@@ -180,7 +182,14 @@ def _parse_time(value, like):
 )
 @weather_skill.argument("--start", default=None, help="Count track points from this time on.")
 @weather_skill.argument("--end", default=None, help="Count track points up to this time.")
-def tc_strike_probability(ds, bbox, resolution, like, radius, start, end, output, **kwargs):
+@weather_skill.argument(
+    "--phase",
+    default="tropical",
+    choices=["tropical", "all"],
+    help="With a `phase` variable (tc-phase-space, tc-besttrack-fetch): count only the "
+    "tropical part (default) or the whole track, extratropical part included.",
+)
+def tc_strike_probability(ds, bbox, resolution, like, radius, start, end, phase, output, **kwargs):
     """Map the chance that a tropical cyclone passes within a radius, from ensemble tc-track tracks."""
     import numpy as np
     import xarray as xr
@@ -211,7 +220,12 @@ def tc_strike_probability(ds, bbox, resolution, like, radius, start, end, output
         lon = like[lon_dim].values.astype(float)
     times = tracks["time"].values
     t0, t1 = _parse_time(start, times), _parse_time(end, times)
-    prob, n_members = strike_probability(tracks, lat, lon, radius, t0, t1)
+    phases = ("tropical",) if phase == "tropical" and "phase" in tracks else None
+    prob, n_members = strike_probability(tracks, lat, lon, radius, t0, t1, phases)
+    if phases:
+        print(
+            "note: counting the tropical part of each track (--phase all for all)", file=sys.stderr
+        )
 
     out = xr.Dataset(
         {
@@ -243,6 +257,7 @@ def tc_strike_probability(ds, bbox, resolution, like, radius, start, end, output
         "strike_radius_km": radius,
         "strike_members": n_members,
         "strike_window": f"{start or 'first'} to {end or 'last'}",
+        "strike_phase": "tropical" if phases else "all",
         "Conventions": "CF-1.13",
     }
     for key in ("forecast_reference_time", "tc_preset", "weather_skills_source"):

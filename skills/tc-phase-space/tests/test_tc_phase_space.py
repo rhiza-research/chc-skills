@@ -154,3 +154,43 @@ def test_keep_tropical_stops_at_transition(mod):
     # A short-lived first spell is skipped for the first one that lasts long enough.
     mask = np.array([1, 0, 0, 0, 0, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0], bool)
     np.testing.assert_array_equal(mod.keep_tropical(mask, hours, 24.0), [0] * 5 + [1] * 5 + [0] * 6)
+
+
+def test_phase_labels(mod):
+    t = np.datetime64("2026-02-01T00", "ns") + np.arange(8) * np.timedelta64(6, "h")
+    times = np.stack([t, t])
+    spells = np.array([[0, 1, 1, 1, 1, 0, 0, 0], [0] * 8], bool)
+    labels = mod.phase_labels(spells, times)
+    assert list(labels[0]) == ["pre-genesis"] + ["tropical"] * 4 + ["extratropical"] * 3
+    assert set(labels[1]) == {"non-tropical"}
+
+
+def test_trim_keeps_the_transition_when_asked(mod):
+    import xarray as xr
+
+    t = np.datetime64("2026-02-01T00", "ns") + np.arange(8) * np.timedelta64(6, "h")
+    dims = ("track", "obs")
+    res = xr.Dataset(
+        {"msl": (dims, np.full((2, 8), 99000.0)), "phase": (dims, np.full((2, 8), "x"))},
+        coords={
+            "time": (dims, np.stack([t, t])),
+            "latitude": (dims, np.zeros((2, 8))),
+            "longitude": (dims, np.zeros((2, 8))),
+        },
+    )
+    spells = np.array([[0, 1, 1, 1, 1, 0, 0, 0], [0] * 8], bool)
+    cut = mod._trim_tropical(res, spells)
+    assert cut.sizes["track"] == 1  # the never-tropical track is dropped
+    assert np.isfinite(cut["msl"].values[0]).tolist() == [False] + [True] * 4 + [False] * 3
+    kept = mod._trim_tropical(res, spells, keep_transition=True)
+    assert np.isfinite(kept["msl"].values[0]).tolist() == [False] + [True] * 7
+    assert kept["phase"].values[0][0] == ""
+
+
+def test_phase_variable_and_keep_transition_flag(track_mod, mod, tmp_path):
+    out = _run(track_mod, mod, tmp_path, extra=("--tropical-only", "--keep-transition"))
+    assert set(np.unique(out["phase"].values)) <= {"tropical", ""}
+    assert out.attrs["phase_space_keep_transition"] == 1
+    with pytest.raises(SystemExit) as exc:
+        _run(track_mod, mod, tmp_path, extra=("--keep-transition",))
+    assert exc.value.code == 2

@@ -76,6 +76,77 @@ ADECK_COLOR = "#555555"
 EARTH_RADIUS_KM = 6371.0
 
 
+# Phases (tc-phase-space `phase`; tc-besttrack-fetch `phase` / `storm_type`).
+POST_PHASES = ("extratropical", "remnant")
+PRE_PHASES = ("pre-genesis", "non-tropical")
+POST_COLOR = "#6e6e6e"
+POST_STYLE = (0, (4, 2))
+PRE_STYLE = (0, (1, 1.5))
+TROPICAL_TYPES = {"TD", "TS", "HU", "TY", "ST", "TC", "SD", "SS", "MH", "TS/TY"}
+EXTRATROPICAL_TYPES = {"EX", "ET"}
+
+
+def phase_from_types(types):
+    """pre-genesis / tropical / extratropical / remnant from official system types
+    (as tc-besttrack-fetch)."""
+    import numpy as np
+
+    types = [str(t).strip().upper() for t in types]
+    tropical = np.array([t in TROPICAL_TYPES for t in types])
+    first = int(np.argmax(tropical)) if tropical.any() else len(types)
+    out = []
+    for k, t in enumerate(types):
+        if not t:
+            out.append("")
+        elif t in TROPICAL_TYPES:
+            out.append("tropical")
+        elif t in EXTRATROPICAL_TYPES:
+            out.append("extratropical")
+        else:
+            out.append("pre-genesis" if k < first else "remnant")
+    return out
+
+
+def point_phases(ds):
+    """(track, obs) phase labels: ``phase``, else from ``storm_type``, else all tropical."""
+    import numpy as np
+
+    shape = (ds.sizes["track"], ds.sizes["obs"])
+    if "phase" in ds:
+        return ds["phase"].values.astype(str)
+    if "storm_type" in ds:
+        return np.array([phase_from_types(r) for r in ds["storm_type"].values.astype(str)])
+    return np.full(shape, "tropical")
+
+
+def segment_classes(ph):
+    """Per segment between consecutive points: ``(post, pre)`` booleans (else tropical)."""
+    import numpy as np
+
+    a, b = np.asarray(ph[:-1]), np.asarray(ph[1:])
+    post = np.isin(a, POST_PHASES) | np.isin(b, POST_PHASES)
+    pre = ~post & (np.isin(a, PRE_PHASES) | np.isin(b, PRE_PHASES))
+    return post, pre
+
+
+def _segments(x, y):
+    import numpy as np
+
+    return np.stack([np.column_stack([x[:-1], y[:-1]]), np.column_stack([x[1:], y[1:]])], 1)
+
+
+def _add_segments(ax, seg, mask, **style):
+    """A LineCollection of the segments where ``mask`` is True (None when there are none)."""
+    import cartopy.crs as ccrs
+    from matplotlib.collections import LineCollection
+
+    if not mask.any():
+        return None
+    lines = LineCollection(seg[mask], transform=ccrs.PlateCarree(), **style)
+    ax.add_collection(lines)
+    return lines
+
+
 def _time_label(value):
     import pandas as pd
 
@@ -157,7 +228,6 @@ def _map(tracks, color_by, bbox, title, reference=None):
     import cartopy.crs as ccrs
     import matplotlib.pyplot as plt
     import numpy as np
-    from matplotlib.collections import LineCollection
     from matplotlib.colors import BoundaryNorm, ListedColormap, Normalize
     from matplotlib.lines import Line2D
 
@@ -181,27 +251,31 @@ def _map(tracks, color_by, bbox, title, reference=None):
     lat = tracks["latitude"].values
     lon = tracks["longitude"].values
     numbers = tracks["number"].values if "number" in tracks.coords else None
-    lines = None
+    phases = point_phases(tracks)
+    lines, drawn = None, set()
+    lw = 0.7 if many else 1.2
     for k in range(tracks.sizes["track"]):
         ok, y, x = _xy(lat[k], lon[k])
         if not ok.any():
             continue
         v = values[k][ok]
         if x.size > 1:
-            seg = np.stack([np.column_stack([x[:-1], y[:-1]]), np.column_stack([x[1:], y[1:]])], 1)
-            lines = LineCollection(
-                seg,
-                cmap=cmap,
-                norm=norm,
-                linewidths=0.7 if many else 1.2,
-                transform=ccrs.PlateCarree(),
-                zorder=5,
-            )
-            # A category segment takes the stronger end's class; other fields the mean.
-            lines.set_array(
-                np.fmax(v[:-1], v[1:]) if color_by == "category" else 0.5 * (v[:-1] + v[1:])
-            )
-            ax.add_collection(lines)
+            seg = _segments(x, y)
+            post, pre = segment_classes(phases[k][ok])
+            trop = ~post & ~pre
+            if trop.any():
+                lines = _add_segments(ax, seg, trop, cmap=cmap, norm=norm, linewidths=lw, zorder=5)
+                # A category segment takes the stronger end's class; other fields the mean.
+                arr = np.fmax(v[:-1], v[1:]) if color_by == "category" else 0.5 * (v[:-1] + v[1:])
+                lines.set_array(arr[trop])
+            if _add_segments(
+                ax, seg, post, colors=POST_COLOR, linewidths=lw, linestyles=[POST_STYLE], zorder=5
+            ):
+                drawn.add("post")
+            if _add_segments(
+                ax, seg, pre, colors=POST_COLOR, linewidths=lw, linestyles=[PRE_STYLE], zorder=5
+            ):
+                drawn.add("pre")
         ax.plot(
             x[0],
             y[0],
@@ -219,6 +293,8 @@ def _map(tracks, color_by, bbox, title, reference=None):
     ref_handles, ref_labels = _reference_tracks(ax, tracks)
     off_handles, off_labels = official_tracks(ax, reference, observed)
     ref_handles, ref_labels = ref_handles + off_handles, ref_labels + off_labels
+    phase_handles, phase_labels = _phase_legend(drawn)
+    ref_handles, ref_labels = ref_handles + phase_handles, ref_labels + phase_labels
     if color_by == "category":
         handles = [Line2D([], [], color=c, lw=3) for c in CATEGORY_COLORS] + ref_handles
         ax.legend(
@@ -331,10 +407,42 @@ def ensemble_mean_track(tracks, group, min_members):
     return np.array(keep), np.array(out_lat), np.array(out_lon)
 
 
+def _phase_legend(drawn):
+    from matplotlib.lines import Line2D
+
+    handles, labels = [], []
+    if "post" in drawn:
+        handles.append(Line2D([], [], color=POST_COLOR, lw=1.2, ls=POST_STYLE))
+        labels.append("extratropical / post-tropical (no wind class)")
+    if "pre" in drawn:
+        handles.append(Line2D([], [], color=POST_COLOR, lw=1.2, ls=PRE_STYLE))
+        labels.append("pre-genesis / not tropical")
+    return handles, labels
+
+
+def mean_track_post(tracks, group, times, phases):
+    """True at the ensemble-mean times when most contributing members are post-tropical."""
+    import numpy as np
+
+    t_all = tracks["time"].values
+    out = []
+    for t in times:
+        states = [
+            phases[k][j]
+            for k in group
+            for j in np.flatnonzero(t_all[k] == t)
+            if np.isfinite(tracks["latitude"].values[k][j])
+        ]
+        post = sum(1 for p in states if p in POST_PHASES)
+        out.append(bool(states) and post > len(states) / 2)
+    return np.array(out, bool)
+
+
 def _reference_tracks(ax, tracks):
     """Control (solid) and ensemble mean (dashed) tracks in black, above everything else.
 
     A white edge keeps the black lines readable over dark shading and dense member tracks.
+    After extratropical transition the control is dotted and the mean grey.
 
     Returns:
         ``(handles, labels)`` for the legend; empty without ensemble members.
@@ -348,24 +456,57 @@ def _reference_tracks(ax, tracks):
         return [], []
     numbers = tracks["number"].values
     lat, lon = tracks["latitude"].values, tracks["longitude"].values
+    phases = point_phases(tracks)
     members = tracks.attrs.get("ensemble_members")
     n_members = len(members) if members is not None else len(np.unique(numbers))
     min_members = max(2, int(np.ceil(MEAN_MIN_FRACTION * n_members)))
     halo = [pe.Stroke(linewidth=REF_LW + 2.2, foreground="white"), pe.Normal()]
-    style = {"color": "k", "lw": REF_LW, "path_effects": halo, "transform": ccrs.PlateCarree()}
+    mean_dash = (0, (4, 2))
+    ctrl_post = (0, (1, 1.2))
+    any_post = False
     for group in storm_groups(tracks):
         if len(group) < min_members:
             continue
-        _, y, x = ensemble_mean_track(tracks, group, min_members)
+        t, y, x = ensemble_mean_track(tracks, group, min_members)
         if y.size < 2:
             continue
         x = np.rad2deg(np.unwrap(np.deg2rad(x)))
-        ax.plot(x, y, ls=(0, (4, 2)), zorder=REF_ZORDER, **style)
+        post_pt = mean_track_post(tracks, group, t, phases)
+        post = post_pt[:-1] | post_pt[1:]
+        seg = _segments(x, y)
+        for mask, color in ((~post, "k"), (post, POST_COLOR)):
+            lines = _add_segments(
+                ax,
+                seg,
+                mask,
+                colors=color,
+                linewidths=REF_LW,
+                linestyles=[mean_dash],
+                zorder=REF_ZORDER,
+            )
+            if lines is not None:
+                lines.set_path_effects(halo)
+        any_post |= bool(post.any())
     for k in np.flatnonzero(numbers == 0):
         ok, y, x = _xy(lat[k], lon[k])
         if not ok.any():
             continue
-        ax.plot(x, y, zorder=REF_ZORDER + 1, **style)
+        if x.size > 1:
+            post, pre = segment_classes(phases[k][ok])
+            seg = _segments(x, y)
+            for mask, style in ((~post & ~pre, "solid"), (post, ctrl_post), (pre, PRE_STYLE)):
+                lines = _add_segments(
+                    ax,
+                    seg,
+                    mask,
+                    colors="k",
+                    linewidths=REF_LW,
+                    linestyles=[style],
+                    zorder=REF_ZORDER + 1,
+                )
+                if lines is not None:
+                    lines.set_path_effects(halo)
+            any_post |= bool(post.any())
         ax.plot(
             x[0],
             y[0],
@@ -379,12 +520,18 @@ def _reference_tracks(ax, tracks):
         )
     handles = [
         Line2D([], [], color="k", lw=REF_LW, path_effects=halo),
-        Line2D([], [], color="k", lw=REF_LW, ls=(0, (4, 2)), path_effects=halo),
+        Line2D([], [], color="k", lw=REF_LW, ls=mean_dash, path_effects=halo),
     ]
     labels = [
         "control",
         f"ensemble mean (where >= {min_members} of {n_members} members have the storm)",
     ]
+    if any_post:
+        handles += [
+            Line2D([], [], color="k", lw=REF_LW, ls=ctrl_post, path_effects=halo),
+            Line2D([], [], color=POST_COLOR, lw=REF_LW, ls=mean_dash, path_effects=halo),
+        ]
+        labels += ["control, extratropical", "ensemble mean, extratropical"]
     return handles, labels
 
 
@@ -393,6 +540,7 @@ def _strike(tracks, strike, bbox, title, reference=None):
     import cartopy.crs as ccrs
     import numpy as np
     from matplotlib.colors import BoundaryNorm, ListedColormap
+    from matplotlib.lines import Line2D
 
     if strike is None:
         raise UsageError("--kind strike needs --strike-prob (tc-strike-probability output)")
@@ -420,6 +568,9 @@ def _strike(tracks, strike, bbox, title, reference=None):
     handles, labels = _reference_tracks(ax, tracks)
     off_handles, off_labels = official_tracks(ax, reference, observed)
     handles, labels = handles + off_handles, labels + off_labels
+    if reference is not None and np.isin(point_phases(reference), POST_PHASES).any():
+        handles.append(Line2D([], [], color=BEST_TRACK_COLOR, lw=REF_LW, ls=POST_STYLE))
+        labels.append("best track, extratropical / post-tropical")
     if handles:
         ax.legend(handles, labels, loc="lower left", fontsize=8, framealpha=0.9)
     if title is None:
@@ -451,8 +602,8 @@ def _select_storm(ds, storm):
 def split_observed(tracks):
     """Model tracks with the observed (``segment``) points blanked, plus the observed history.
 
-    Returns ``(forecast tracks, observed)``; ``observed`` is ``(lat, lon, category)`` of the
-    longest observed segment, or None.
+    Returns ``(forecast tracks, observed)``; ``observed`` is ``(lat, lon, category, phase)``
+    of the longest observed segment, or None.
     """
     import numpy as np
 
@@ -469,14 +620,16 @@ def split_observed(tracks):
         if "category" in tracks
         else np.full(lat.size, np.nan)
     )
+    phase = point_phases(tracks)[k][obs[k]]
     fc = tracks.copy()
     for name in ("latitude", "longitude"):
         fc = fc.assign_coords({name: fc[name].where(~obs)})
-    return fc, (lat, lon, cat)
+    return fc, (lat, lon, cat, phase)
 
 
-def _best_track_line(ax, lat, lon, cat, label):
-    """One official best track: thick blue line with a white edge, class-coloured dots."""
+def _best_track_line(ax, lat, lon, cat, label, phase=None):
+    """One official best track: thick blue line with a white edge and class-coloured dots;
+    dashed with hollow dots where it is extratropical or a remnant, dotted before genesis."""
     import cartopy.crs as ccrs
     import matplotlib.patheffects as pe
     import numpy as np
@@ -487,17 +640,28 @@ def _best_track_line(ax, lat, lon, cat, label):
         return None
     y, x = lat[ok], np.rad2deg(np.unwrap(np.deg2rad(lon[ok])))
     c = cat[ok] if cat is not None else np.full(y.size, np.nan)
+    ph = np.asarray(phase)[ok] if phase is not None else np.full(y.size, "tropical")
     halo = [pe.Stroke(linewidth=REF_LW + 3.0, foreground="white"), pe.Normal()]
-    ax.plot(
-        x,
-        y,
-        color=BEST_TRACK_COLOR,
-        lw=REF_LW + 0.8,
-        path_effects=halo,
-        transform=ccrs.PlateCarree(),
-        zorder=REF_ZORDER + 5,
-    )
-    colors = [CATEGORY_COLORS[int(v)] if np.isfinite(v) else "white" for v in c]
+    if x.size > 1:
+        post, pre = segment_classes(ph)
+        seg = _segments(x, y)
+        for mask, style in ((~post & ~pre, "solid"), (post, POST_STYLE), (pre, PRE_STYLE)):
+            lines = _add_segments(
+                ax,
+                seg,
+                mask,
+                colors=BEST_TRACK_COLOR,
+                linewidths=REF_LW + 0.8,
+                linestyles=[style],
+                zorder=REF_ZORDER + 5,
+            )
+            if lines is not None:
+                lines.set_path_effects(halo)
+    tropical = ~np.isin(ph, POST_PHASES + PRE_PHASES)
+    colors = [
+        CATEGORY_COLORS[int(v)] if np.isfinite(v) and t else "white"
+        for v, t in zip(c, tropical, strict=True)
+    ]
     ax.scatter(
         x,
         y,
@@ -539,11 +703,14 @@ def official_tracks(ax, reference, observed=None):
     lat = reference["latitude"].values.astype(float)
     lon = reference["longitude"].values.astype(float)
     cat = reference["category"].values.astype(float) if "category" in reference else None
+    ref_phases = point_phases(reference)
     halo = [pe.Stroke(linewidth=REF_LW + 2.2, foreground="white"), pe.Normal()]
     seen = set()
     for k, kind in enumerate(kinds):
         if kind == "best_track":
-            h = _best_track_line(ax, lat[k], lon[k], cat[k] if cat is not None else None, "")
+            h = _best_track_line(
+                ax, lat[k], lon[k], cat[k] if cat is not None else None, "", ref_phases[k]
+            )
             if h is not None and "best" not in seen:
                 handles.append(h)
                 labels.append("official best track")
