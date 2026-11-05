@@ -9,3 +9,6 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+
+# local notes on improvements to upstream skills (not shared)
+skill_ids_improve/

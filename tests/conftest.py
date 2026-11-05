@@ -281,3 +281,154 @@ def load_skill(skill_dir_name, script_stem):
 def run_skill(fn, *argv):
     """Invoke a decorated skill with an argv list (in-process)."""
     return fn(list(argv))
+
+
+def storm_path(n_time, dt_hours=6, start=(-12.0, 62.0), velocity=(-0.25, -0.75)):
+    """Centre (lat, lon) of a synthetic cyclone at each time; ``velocity`` is deg per 6 h."""
+    k = np.arange(n_time) * dt_hours / 6.0
+    return start[0] + velocity[0] * k, start[1] + velocity[1] * k
+
+
+def make_tc_dataset(
+    n_time=17,
+    dt_hours=6,
+    res=0.5,
+    lats=(-30.0, 0.0),
+    lons=(35.0, 75.0),
+    members=None,
+    forecast=False,
+    init="2026-02-01",
+    depth=2500.0,
+    warm=12.0,
+    vmax=25.0,
+    levels=(300.0, 500.0),
+    path=None,
+    seed=0,
+):
+    """Gridded Dataset holding one synthetic warm-core cyclone moving across the grid.
+
+    Variables: ``msl`` (Pa), ``u10``/``v10`` (m s-1, cyclonic rotation) and ``gh`` on
+    ``levels`` (m) whose 300-500 hPa thickness peaks at the centre by ``warm`` m. With
+    ``members`` the storm is shifted by 0.5 deg per member; with ``forecast`` the time axis
+    is a scalar init ``time`` plus ``step``.
+    """
+    rng = np.random.default_rng(seed)
+    lat = np.arange(lats[0], lats[1] + res / 2, res)
+    lon = np.arange(lons[0], lons[1] + res / 2, res)
+    clat, clon = path if path is not None else storm_path(n_time, dt_hours)
+    n_mem = members or 1
+    msl = np.empty((n_mem, n_time, lat.size, lon.size))
+    u10 = np.empty_like(msl)
+    v10 = np.empty_like(msl)
+    gh = np.empty((n_mem, n_time, len(levels), lat.size, lon.size))
+    LA, LO = np.meshgrid(lat, lon, indexing="ij")
+    for m in range(n_mem):
+        for t in range(n_time):
+            y0, x0 = clat[t] + 0.5 * m, clon[t]
+            dy = LA - y0
+            dx = (((LO - x0 + 180.0) % 360.0) - 180.0) * np.cos(np.radians(y0))
+            r2 = dx**2 + dy**2
+            shape = np.exp(-r2 / (2 * 2.0**2))
+            msl[m, t] = 101300.0 - depth * shape + 2.0 * rng.standard_normal(LA.shape)
+            r = np.sqrt(r2) + 1e-6
+            speed = vmax * (r / 1.5) * np.exp(1 - r / 1.5)
+            sign = -1.0 if y0 < 0 else 1.0  # clockwise in the south
+            u10[m, t] = -sign * speed * dy / r
+            v10[m, t] = sign * speed * dx / r
+            for k, p in enumerate(levels):
+                base = 9600.0 if p <= 300 else 5850.0 if p <= 500 else 1500.0 * (850 / p)
+                # The warm core lifts upper levels: height anomaly grows with height.
+                frac = (500.0 - p) / 200.0 if p < 500 else 0.0
+                gh[m, t, k] = base - 30.0 * shape + warm * frac * shape
+    dims = ("number", "time", "latitude", "longitude")
+    if forecast:
+        init64 = np.datetime64(init, "ns")
+        steps = (np.arange(n_time) * dt_hours).astype("timedelta64[h]").astype("timedelta64[ns]")
+        tdim, tcoord = "step", {"step": steps, "time": init64}
+    else:
+        times = np.datetime64(init, "ns") + (np.arange(n_time) * dt_hours).astype(
+            "timedelta64[h]"
+        ).astype("timedelta64[ns]")
+        tdim, tcoord = "time", {"time": times}
+    dims = ("number", tdim, "latitude", "longitude")
+    ds = xr.Dataset(
+        {
+            "msl": (dims, msl, {"units": "Pa", "standard_name": "air_pressure_at_mean_sea_level"}),
+            "u10": (dims, u10, {"units": "m s-1"}),
+            "v10": (dims, v10, {"units": "m s-1"}),
+            "gh": (
+                ("number", tdim, "level", "latitude", "longitude"),
+                gh,
+                {"units": "m", "standard_name": "geopotential_height"},
+            ),
+        },
+        coords={
+            **tcoord,
+            "number": np.arange(n_mem),
+            "level": ("level", np.array(levels), {"units": "hPa"}),
+            "latitude": lat,
+            "longitude": lon,
+        },
+    )
+    if members is None:
+        ds = ds.isel(number=0, drop=True)
+    ds["latitude"].attrs.update(standard_name="latitude", units="degrees_north", axis="Y")
+    ds["longitude"].attrs.update(standard_name="longitude", units="degrees_east", axis="X")
+    ds["time"].attrs.update(standard_name="time")
+    return ds
+
+
+TRACK_T0 = np.datetime64("2026-02-01T00", "ns")
+
+
+def make_tracks(rows, *, members=None, init=None, reference=False, dt_hours=6):
+    """A tc-track / tc-besttrack-fetch style track file.
+
+    ``rows``: ``(id, number, first step index, [(lat, lon), ...], msl Pa, wind m s-1)``;
+    step k is at ``TRACK_T0 + k * dt_hours``. ``msl``/``wind`` may also be per-point lists.
+    ``reference=True`` gives best tracks (``storm``, ``storm_name``, ``kind``) instead of
+    ensemble members (``number``, ``ensemble_members``).
+    """
+    n_obs = max(len(r[3]) for r in rows)
+    shape = (len(rows), n_obs)
+    lat, lon = np.full(shape, np.nan), np.full(shape, np.nan)
+    msl, wind = np.full(shape, np.nan), np.full(shape, np.nan)
+    times = np.full(shape, np.datetime64("NaT", "ns"))
+    step = np.timedelta64(dt_hours, "h")
+    for k, (_, _, start, pts, p, w) in enumerate(rows):
+        m = len(pts)
+        lat[k, :m] = [a for a, _ in pts]
+        lon[k, :m] = [b for _, b in pts]
+        times[k, :m] = TRACK_T0 + (start + np.arange(m)) * step
+        msl[k, :m] = p
+        wind[k, :m] = w
+    dims = ("track", "obs")
+    ds = xr.Dataset(
+        {
+            "msl": (dims, msl, {"units": "Pa"}),
+            "wind_max": (dims, wind, {"units": "m s-1"}),
+        },
+        coords={
+            "track": [r[0] for r in rows],
+            "time": (dims, times),
+            "latitude": (dims, lat, {"units": "degrees_north", "standard_name": "latitude"}),
+            "longitude": (dims, lon, {"units": "degrees_east", "standard_name": "longitude"}),
+        },
+        attrs={"featureType": "trajectory"},
+    )
+    if reference:
+        return ds.assign_coords(
+            storm=("track", [r[0] for r in rows]),
+            storm_name=("track", [f"NAME{k}" for k in range(len(rows))]),
+            kind=("track", ["best_track"] * len(rows)),
+        )
+    ds = ds.assign_coords(number=("track", [r[1] for r in rows]))
+    ds.attrs["ensemble_members"] = members or sorted({r[1] for r in rows})
+    if init is not None:
+        ds.attrs["forecast_reference_time"] = str(init)[:19]
+    return ds
+
+
+def line_track(lat0, lon0, n, dlat=-0.5, dlon=-1.0):
+    """Positions of a storm moving ``dlat``/``dlon`` degrees per step."""
+    return [(lat0 + dlat * k, lon0 + dlon * k) for k in range(n)]

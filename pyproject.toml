@@ -28,6 +28,8 @@ dev = [
     "scipy",
     "matplotlib>=3.8",
     "pillow",
+    "cartopy>=0.26.0",
+    "tropycal==1.5.2",
 ]
 
 [tool.uv.sources]
