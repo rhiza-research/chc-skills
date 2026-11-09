@@ -547,6 +547,11 @@ def _strike(tracks, strike, bbox, title, reference=None):
     fig, ax, bar = _base_map(tracks, bbox, extra=reference)
     tracks, observed = split_observed(tracks)
     sp = strike["strike_probability"]
+    # A grid across the dateline is stored as two pieces in -180..180; on 0..360 it is one.
+    lon = sp["longitude"].values.astype(float)
+    lon360 = np.sort(lon % 360.0)
+    if lon.size > 1 and np.diff(lon360).max() < np.diff(np.sort(lon)).max():
+        sp = sp.assign_coords(longitude=lon % 360.0).sortby("longitude")
     cmap = ListedColormap(STRIKE_COLORS)
     mesh = ax.pcolormesh(
         sp["longitude"],
