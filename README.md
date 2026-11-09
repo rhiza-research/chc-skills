@@ -14,6 +14,7 @@ position figures, and the DWD ICON-EPS ensemble regridded from its triangular gr
 | Skill | Role |
 | --- | --- |
 | [`subc-mme-fetch`](skills/subc-mme-fetch/) | Fetch one SubC global MME outlook (`--outlook 7d\|15d\|30d`; mean + anomaly per variable) as a forecast Zarr. `--probe-latest VAR` gives the latest init and warns when its window has already ended |
+| [`subc-climatology-fetch`](skills/subc-climatology-fetch/) | Fetch one SubX model's 1999–2016 hindcast climatology from CHC SubC (ECCC-GEPS8, GEFSv12, FIM, GEOS V2/V3, CFSv2, CCSM4) for an init date: ensemble mean or pooled 5–95th percentiles per lead day, or over any window of lead days (`--outlook Nd --window-start DAYS`; percentiles for 7/15/30 days from the init), as a forecast Zarr. Reads data.chc.ucsb.edu directly |
 | [`kmsa-wrf-fetch`](skills/kmsa-wrf-fetch/) | Read one KMSA WRF run (`--product 7day` or `daily`; 3-hourly, ~0.036° Kenya grid) as a forecast Zarr of `tp` rates and `t2m`, or every WRF field with `--product full`, from the private `gs://sheerwater-datalake/kmsa-wrf` mirror. **Private use only: requires `GCLOUD_SERVICE_CREDENTIALS` with read access to that bucket.** |
 | [`iod-mode-index`](skills/iod-mode-index/) | Dipole Mode Index (West − East) plus west/east box means from a pre-computed temperature anomaly |
 | [`iod-enso-fetch`](skills/iod-enso-fetch/) | Fetch BoM IOD / ENSO observation or ACCESS-S forecast PNGs, or official index values as a Zarr (`--format data` / `-o *.zarr`) |

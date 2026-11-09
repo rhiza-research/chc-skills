@@ -2,7 +2,7 @@
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "rhiza-chc",
   "displayName": "CHC Skills",
-  "description": "Climate Hazards Center data skills for SubC forecasts, Indian Ocean Dipole analysis, BoM IOD/ENSO observation graphs, CPC MJO forecast diagrams, NCICS MJO maps and Hovmöllers, OLR equatorial-wave filtering with Hovmöllers and local phase roses, the RMM MJO index and phase diagram, and Africa ITF figures.",
+  "description": "Climate Hazards Center data skills for SubC forecasts and per-model SubX hindcast climatologies, Indian Ocean Dipole analysis, BoM IOD/ENSO observation graphs, CPC MJO forecast diagrams, NCICS MJO maps and Hovmöllers, OLR equatorial-wave filtering with Hovmöllers and local phase roses, the RMM MJO index and phase diagram, and Africa ITF figures.",
   "author": {
     "name": "Rhiza Research",
     "url": "https://github.com/rhiza-research"
