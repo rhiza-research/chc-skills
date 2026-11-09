@@ -43,10 +43,9 @@ weather-skills transforms and plotters when those are available (for example
   e.g. `14d` from day 14 for weeks 3–4; `pr` a total in `mm`). Quantiles only
   exist daily and for `7d|15d|30d` from the init. Any `--date` works; pass the
   forecast's own init so `time` matches it, then `difference` the same
-  model's forecast against it for anomalies. It reads data.chc.ucsb.edu
-  directly (no mirror): expect ~30 s per file open, and on HTTP 429 the skill
-  backs off for minutes, so fetch one model at a time with the default
-  `--workers`.
+  model's forecast against it for anomalies. It downloads whole files
+  from CHC's FTP server (no mirror): ~60 MB, about 20 s, per variable for a 1°
+  model, so fetch one model at a time with the default `--workers`.
 - **`subc-forecast-fetch`** pulls one SubX model's real-time forecast
   (`--model`, every member, daily leads to 32–45 days) for one init. Inits are
   irregular per model (CFSv2 daily, the others weekly or twice weekly): get

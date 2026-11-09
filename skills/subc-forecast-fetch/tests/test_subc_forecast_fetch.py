@@ -69,7 +69,7 @@ def _serve(mod, monkeypatch, files: dict[str, xr.Dataset]):
 
 def test_file_url(mod):
     assert mod._file_url("NCEP-CFSv2", "pr", date(2026, 11, 9)) == (
-        "https://data.chc.ucsb.edu/experimental/SubC/forecasts"
+        "ftp://ftp.chc.ucsb.edu/experimental/SubC/forecasts"
         "/pr/daily/NCEP-CFSv2/11/pr_NCEP-CFSv2_20261109.daily.nc"
     )
 
@@ -170,7 +170,7 @@ def _http_error(status):
             super().__init__(f"{status}, message='HTTP {status}'")
             self.status = status
 
-    err = FileNotFoundError("https://data.chc.ucsb.edu/...")
+    err = FileNotFoundError("ftp://ftp.chc.ucsb.edu/...")
     err.__cause__ = _Resp()
     return err
 
@@ -230,14 +230,14 @@ def test_probe_latest_walks_back_months(mod, monkeypatch, capsys):
     assert capsys.readouterr().out.strip() == recent.isoformat()
 
 
-def test_list_inits_parses_index_html(mod, monkeypatch):
-    html = (
-        '<a href="pr_NCEP-CFSv2_20251109.daily.nc">x</a>'
-        '<a href="pr_NCEP-CFSv2_20261109.daily.nc">x</a>'
-        '<a href="pr_NCEP-CFSv2_20261109.daily.nc.bak">x</a>'
-        '<a href="tas_NCEP-CFSv2_20261108.daily.nc">x</a>'
-    )
-    monkeypatch.setattr(mod, "_get_text", lambda url: html)
+def test_list_inits_parses_ftp_listing(mod, monkeypatch):
+    names = [
+        "pr_NCEP-CFSv2_20251109.daily.nc",
+        "pr_NCEP-CFSv2_20261109.daily.nc",
+        "pr_NCEP-CFSv2_20261109.daily.nc.bak",
+        "tas_NCEP-CFSv2_20261108.daily.nc",
+    ]
+    monkeypatch.setattr(mod, "_ftp_list", lambda url: names)
     assert mod._list_inits("NCEP-CFSv2", "pr", 11) == [date(2025, 11, 9), date(2026, 11, 9)]
 
 
@@ -252,7 +252,7 @@ def test_unknown_variable(mod, tmp_path):
 
 def _wrapped(cause: BaseException) -> FileNotFoundError:
     """fsspec's shape: a bare FileNotFoundError(url) with the real error as the cause."""
-    err = FileNotFoundError("https://data.chc.ucsb.edu/...")
+    err = FileNotFoundError("ftp://ftp.chc.ucsb.edu/...")
     err.__cause__ = cause
     return err
 
@@ -288,3 +288,36 @@ def test_unreadable_error_names_root_cause(mod, monkeypatch, tmp_path, capsys):
         )  # fmt: skip
     assert excinfo.value.code == 1
     assert "unreadable" in (err := capsys.readouterr().err) and "ValueError: bad HDF5" in err
+
+
+def test_ftp_reply_codes_map_to_retry_rules(mod):
+    assert mod._FTPError("550 No such file or directory").status == 404
+    assert mod._FTPError("421 Too many connections").status == 429
+    assert mod._is_transient(mod._FTPError("425 Can't open data connection"))
+    assert not mod._is_transient(mod._FTPError("530 Login incorrect"))
+
+
+def test_open_remote_downloads_then_cleans_up(mod, monkeypatch, tmp_path):
+    seen = {}
+
+    def fake_download(url, dest):
+        seen["path"] = dest
+        _fake_forecast("pr").to_netcdf(dest, engine="h5netcdf")
+
+    monkeypatch.setattr(mod, "_download", fake_download)
+    with mod._open_remote(mod.CHC_BASE + "/x/y.daily.nc") as ds:
+        assert seen["path"].name == "y.daily.nc"
+        assert "pr" in ds.data_vars
+    assert not seen["path"].exists()
+
+
+def test_iridl_kelvin_scale_units(mod, monkeypatch, tmp_path):
+    tas = _fake_forecast("tas", fill=300.0, units="Kelvin_scale", standard_name="air_temperature")
+    _serve(mod, monkeypatch, {"tas": tas})
+    out = tmp_path / "k.zarr"
+    run_skill(
+        mod.fetch, "--model", "NCEP-CFSv2", "--date", "2026-11-09", "-v", "tas", "-o", str(out)
+    )
+    ds = xr.open_zarr(out, consolidated=True)
+    assert ds["tas"].attrs["units"] == "degree_Celsius"
+    assert float(ds["tas"].mean()) == pytest.approx(300 - 273.15, abs=1e-3)

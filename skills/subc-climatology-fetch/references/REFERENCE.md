@@ -2,7 +2,8 @@
 
 Origin (no mirror yet):
 
-`https://data.chc.ucsb.edu/experimental/SubC/climatology/1999_2016/`
+`ftp://ftp.chc.ucsb.edu/experimental/SubC/climatology/1999_2016/`
+(also browsable at `https://data.chc.ucsb.edu/experimental/SubC/climatology/1999_2016/`)
 
 ```
 {var}/{model}/{MM}/{var}_{model}_{MMDD}.daily.nc
@@ -39,8 +40,13 @@ The `.inputs.json` lists the hindcast files pooled for that calendar day
 
 ## Server behaviour
 
-- Byte ranges are supported (`Accept-Ranges: bytes`).
-- Bursts of requests get HTTP 429 for several minutes.
-- The Let's Encrypt chain verifies against certifi's CA bundle; Python's default
-  context on Windows can fail it with "certificate has expired" (an old cross-sign
-  in the system store), so the skill always verifies against certifi.
+CHC asks download scripts to use FTP (`ftp://ftp.chc.ucsb.edu/`, the same tree as
+`https://data.chc.ucsb.edu/`; CHC's note gives a `/pub/org/chc/` prefix, but the
+anonymous root is already the CHC tree). The HTTPS side answers bursts with HTTP 429
+for several minutes.
+
+- Anonymous login, passive mode. `REST` byte ranges work, but each one opens a new
+  data connection (~3.5 s), so the skill downloads whole files (~4 MB/s measured
+  2026-11-09) into a temporary directory and opens them locally.
+- Reply codes: 550 = no such file/directory; 421 = too many connections (retried
+  with backoff); other 4xx are temporary.

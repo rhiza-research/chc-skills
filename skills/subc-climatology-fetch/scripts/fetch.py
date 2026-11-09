@@ -2,10 +2,7 @@
 # requires-python = ">=3.12,<3.13"
 # dependencies = [
 #   "weather-skills-core>=0.1.1",
-#   "aiohttp",
-#   "certifi",
 #   "cftime>=1.6",
-#   "fsspec",
 #   "h5netcdf",
 #   "h5py",
 #   "numpy",
@@ -42,6 +39,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import sys
 import time as _time
 from concurrent.futures import ThreadPoolExecutor
@@ -59,14 +57,13 @@ from weather_skills_core.units import (
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
 _SKILL_VERSION = "0.0.0"
 
-CHC_BASE = "https://data.chc.ucsb.edu/experimental/SubC/climatology"
+CHC_BASE = "ftp://ftp.chc.ucsb.edu/experimental/SubC/climatology"
 PERIOD = "1999_2016"
-_USER_AGENT = "weather-skills/subc-climatology-fetch"
 DEFAULT_WORKERS = 2
-# The HDF5 metadata is spread through each file; 2 MiB blocks keep the open to a few
-# dozen range requests, and one daily field (one chunk) to a handful more.
-_BLOCK_SIZE = 2 * 2**20
-# data.chc.ucsb.edu answers bursts with HTTP 429 for several minutes; back off long.
+_FTP_HOST = "ftp.chc.ucsb.edu"
+_FTP_TIMEOUT = 120
+_FTP_BLOCK = 2**20
+# Refused or dropped connections can persist for minutes; back off long.
 _RETRY_DELAYS = (15, 30, 60, 120, 240)
 
 # Variables each model's climatology is published for (server listing, 2026-11).
@@ -161,20 +158,40 @@ def _source_names(var: str, days: int | None, precomputed: bool, stat: str) -> l
     return [f"{prefix}_{p}" for p in QUANTILES]
 
 
+# --- transport ------------------------------------------------------------------------
+# CHC asks download scripts to use its FTP server rather than HTTPS. Each file is
+# fetched whole (one RETR) into a temporary directory and opened locally: an FTP range
+# read costs a fresh data connection (~3.5 s), while a whole file streams at several MB/s.
+
+
+class _FTPError(Exception):
+    """An FTP error reply, mapped onto the HTTP-style ``status`` the retry rules use."""
+
+    def __init__(self, reply: str):
+        super().__init__(reply)
+        code = int(reply[:3]) if reply[:3].isdigit() else 0
+        self.ftp_code = code
+        if code == 550:
+            self.status = 404  # no such file or directory
+        elif code == 421:
+            self.status = 429  # too many connections from this address
+        elif 400 <= code < 500:
+            self.status = 503  # temporary failure
+        else:
+            self.status = 400  # permanent failure
+
+
 def _http_status(exc: BaseException) -> int | None:
-    """HTTP status carried anywhere on an exception chain (fsspec wraps aiohttp's)."""
-    seen = set()
-    while exc is not None and id(exc) not in seen:
-        seen.add(id(exc))
-        status = getattr(exc, "status", None)
+    """HTTP-style status carried anywhere on an exception chain."""
+    for err in _exc_chain(exc):
+        status = getattr(err, "status", None)
         if isinstance(status, int):
             return status
-        exc = exc.__cause__ or exc.__context__
     return None
 
 
 def _exc_chain(exc: BaseException | None):
-    """``exc`` and its causes, outermost first (fsspec wraps the real error)."""
+    """``exc`` and its causes, outermost first."""
     seen = set()
     while exc is not None and id(exc) not in seen:
         seen.add(id(exc))
@@ -183,65 +200,70 @@ def _exc_chain(exc: BaseException | None):
 
 
 def _describe(exc: BaseException) -> str:
-    """The innermost cause as ``Type: message``; fsspec's outer error is just the URL."""
+    """The innermost cause as ``Type: message``."""
     root = list(_exc_chain(exc))[-1]
     return f"{type(root).__name__}: {root}" if str(root) else type(root).__name__
 
 
 def _is_transient(exc: BaseException) -> bool:
-    import asyncio
-
     status = _http_status(exc)
     if status is not None:
         return status == 429 or status >= 500
     for err in _exc_chain(exc):
         text = f"{type(err).__name__} {err}".lower()
-        if "certificate" in text or "ssl" in text:
-            return False
-        if isinstance(err, (TimeoutError, asyncio.TimeoutError, ConnectionError)) or any(
+        if isinstance(err, (TimeoutError, ConnectionError, EOFError)) or any(
             marker in text
-            for marker in (
-                "timeout",
-                "timed out",
-                "connection reset",
-                "disconnect",
-                "cannot connect",
-                "payload",
-            )
+            for marker in ("timeout", "timed out", "connection reset", "disconnect", "refused")
         ):
             return True
     return False
 
 
-def _filesystem():
-    """HTTPS filesystem verifying against certifi's CA bundle.
+def _ftp_path(url: str) -> str:
+    from urllib.parse import urlparse
 
-    data.chc.ucsb.edu's Let's Encrypt chain fails against some system stores (an
-    expired cross-sign left in the Windows store), and passes against certifi's.
-    """
-    import ssl
-
-    import aiohttp
-    import certifi
-    import fsspec
-
-    async def get_client(**kwargs):
-        ctx = ssl.create_default_context(cafile=certifi.where())
-        return aiohttp.ClientSession(
-            connector=aiohttp.TCPConnector(ssl=ctx),
-            headers={"User-Agent": _USER_AGENT},
-            **kwargs,
-        )
-
-    return fsspec.filesystem("https", get_client=get_client, skip_instance_cache=True)
+    return urlparse(url).path
 
 
+@contextlib.contextmanager
+def _ftp():
+    """An anonymous passive-mode session on the CHC FTP server."""
+    import ftplib
+
+    try:
+        ftp = ftplib.FTP(_FTP_HOST, timeout=_FTP_TIMEOUT)
+        ftp.login()
+        ftp.set_pasv(True)
+    except ftplib.Error as exc:
+        raise _FTPError(str(exc)) from exc
+    try:
+        yield ftp
+    except ftplib.Error as exc:
+        raise _FTPError(str(exc)) from exc
+    finally:
+        with contextlib.suppress(OSError, EOFError, ftplib.Error):
+            ftp.quit()
+        ftp.close()
+
+
+def _download(url: str, dest) -> None:
+    with _ftp() as ftp, open(dest, "wb") as fh:
+        ftp.retrbinary(f"RETR {_ftp_path(url)}", fh.write, blocksize=_FTP_BLOCK)
+
+
+@contextlib.contextmanager
 def _open_remote(url: str):
-    """Open one climatology NetCDF lazily over HTTP range requests."""
+    """Download one NetCDF over FTP to a temporary file and open it; removed on exit."""
+    import tempfile
+    from pathlib import Path
+
     import xarray as xr
 
-    handle = _filesystem().open(url, block_size=_BLOCK_SIZE, cache_type="blockcache")
-    return xr.open_dataset(handle, engine="h5netcdf")
+    with tempfile.TemporaryDirectory(prefix="subc-") as tmp:
+        path = Path(tmp) / url.rsplit("/", 1)[-1]
+        _download(url, path)
+        with xr.open_dataset(path, engine="h5netcdf") as ds:
+            yield ds
 
 
 def _read_fields(url: str, names: list[str]):
@@ -266,15 +288,17 @@ def _read_with_retry(url: str, names: list[str]):
             if not _is_transient(exc) or attempt == len(_RETRY_DELAYS):
                 if status == 429:
                     raise DataError(
-                        "data.chc.ucsb.edu is rate-limiting requests (HTTP 429) and did not "
-                        "recover after retrying; wait several minutes and rerun with "
+                        "ftp.chc.ucsb.edu is refusing more connections (FTP 421) and did "
+                        "not recover after retrying; wait several minutes and rerun with "
                         "--workers 1."
                     ) from None
                 kind = "unreachable" if _is_transient(exc) else "unreadable"
                 raise DataError(f"climatology file {kind}: {url}: {_describe(exc)}") from None
             delay = _RETRY_DELAYS[attempt]
-            why = f"HTTP {status}" if status else type(exc).__name__
-            print(f"{why} from data.chc.ucsb.edu; retrying in {delay} s ...", file=sys.stderr)
+            print(
+                f"{_describe(exc)} from ftp.chc.ucsb.edu; retrying in {delay} s ...",
+                file=sys.stderr,
+            )
             _time.sleep(delay)
     raise AssertionError("unreachable")
 
@@ -506,7 +530,7 @@ def fetch(date, model, outlook, window_start, stat, variable, bbox, workers, **k
         "Conventions": "CF-1.13",
         "title": f"SubC {model} hindcast climatology",
         "weather_skills_source": "chc-subc-climatology",
-        "source": f"https://data.chc.ucsb.edu/experimental/SubC/climatology/{PERIOD}/",
+        "source": f"{CHC_BASE}/{PERIOD}/",
         "model": model,
         "climatology_years": "1999-2016",
         "climatology_window_days": 10,

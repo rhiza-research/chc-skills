@@ -2,10 +2,7 @@
 # requires-python = ">=3.12,<3.13"
 # dependencies = [
 #   "weather-skills-core>=0.1.1",
-#   "aiohttp",
-#   "certifi",
 #   "cftime>=1.6",
-#   "fsspec",
 #   "h5netcdf",
 #   "h5py",
 #   "numpy",
@@ -34,6 +31,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import sys
 import time as _time
 from concurrent.futures import ThreadPoolExecutor
@@ -48,13 +46,13 @@ from weather_skills_core.units import stamp_data_interval, to_standard_units
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
 _SKILL_VERSION = "0.0.0"
 
-CHC_BASE = "https://data.chc.ucsb.edu/experimental/SubC/forecasts"
-_USER_AGENT = "weather-skills/subc-forecast-fetch"
+CHC_BASE = "ftp://ftp.chc.ucsb.edu/experimental/SubC/forecasts"
 DEFAULT_WORKERS = 2
 DEFAULT_VARIABLE = "pr"
-_BLOCK_SIZE = 2 * 2**20
-_HTTP_TIMEOUT = 60
-# data.chc.ucsb.edu answers bursts with HTTP 429 for several minutes; back off long.
+_FTP_HOST = "ftp.chc.ucsb.edu"
+_FTP_TIMEOUT = 120
+_FTP_BLOCK = 2**20
+# Refused or dropped connections can persist for minutes; back off long.
 _RETRY_DELAYS = (15, 30, 60, 120, 240)
 # --probe-latest looks back through this many month folders.
 _PROBE_MONTHS = 6
@@ -106,6 +104,9 @@ VARIABLES: dict[str, str] = {
     "zg": "Geopotential height",
 }
 
+# IRIDL unit spellings some models' files carry (CFSv2 `tas` is "Kelvin_scale").
+_UNIT_ALIASES = {"Kelvin_scale": "K", "Celsius_scale": "degree_Celsius"}
+
 _DIM_RENAME = {
     "S": "time",
     "M": "number",
@@ -122,33 +123,39 @@ def _file_url(model: str, var: str, init: _date) -> str:
 
 
 # --- transport ------------------------------------------------------------------------
+# CHC asks download scripts to use its FTP server rather than HTTPS. Each file is
+# fetched whole (one RETR) into a temporary directory and opened locally: an FTP range
+# read costs a fresh data connection (~3.5 s), while a whole file streams at several MB/s.
 
 
-def _ssl_context():
-    """certifi's CA bundle: data.chc.ucsb.edu's chain fails some system stores."""
-    import ssl
+class _FTPError(Exception):
+    """An FTP error reply, mapped onto the HTTP-style ``status`` the retry rules use."""
 
-    import certifi
-
-    return ssl.create_default_context(cafile=certifi.where())
+    def __init__(self, reply: str):
+        super().__init__(reply)
+        code = int(reply[:3]) if reply[:3].isdigit() else 0
+        self.ftp_code = code
+        if code == 550:
+            self.status = 404  # no such file or directory
+        elif code == 421:
+            self.status = 429  # too many connections from this address
+        elif 400 <= code < 500:
+            self.status = 503  # temporary failure
+        else:
+            self.status = 400  # permanent failure
 
 
 def _http_status(exc: BaseException) -> int | None:
-    """HTTP status carried anywhere on an exception chain (fsspec wraps aiohttp's)."""
-    seen = set()
-    while exc is not None and id(exc) not in seen:
-        seen.add(id(exc))
-        status = getattr(exc, "status", None)
-        if not isinstance(status, int):
-            status = getattr(exc, "code", None)  # urllib.error.HTTPError
+    """HTTP-style status carried anywhere on an exception chain."""
+    for err in _exc_chain(exc):
+        status = getattr(err, "status", None)
         if isinstance(status, int):
             return status
-        exc = exc.__cause__ or exc.__context__
     return None
 
 
 def _exc_chain(exc: BaseException | None):
-    """``exc`` and its causes, outermost first (fsspec wraps the real error)."""
+    """``exc`` and its causes, outermost first."""
     seen = set()
     while exc is not None and id(exc) not in seen:
         seen.add(id(exc))
@@ -157,34 +164,76 @@ def _exc_chain(exc: BaseException | None):
 
 
 def _describe(exc: BaseException) -> str:
-    """The innermost cause as ``Type: message``; fsspec's outer error is just the URL."""
+    """The innermost cause as ``Type: message``."""
     root = list(_exc_chain(exc))[-1]
     return f"{type(root).__name__}: {root}" if str(root) else type(root).__name__
 
 
 def _is_transient(exc: BaseException) -> bool:
-    import asyncio
-
     status = _http_status(exc)
     if status is not None:
         return status == 429 or status >= 500
     for err in _exc_chain(exc):
         text = f"{type(err).__name__} {err}".lower()
-        if "certificate" in text or "ssl" in text:
-            return False
-        if isinstance(err, (TimeoutError, asyncio.TimeoutError, ConnectionError)) or any(
+        if isinstance(err, (TimeoutError, ConnectionError, EOFError)) or any(
             marker in text
-            for marker in (
-                "timeout",
-                "timed out",
-                "connection reset",
-                "disconnect",
-                "cannot connect",
-                "payload",
-            )
+            for marker in ("timeout", "timed out", "connection reset", "disconnect", "refused")
         ):
             return True
     return False
+
+
+def _ftp_path(url: str) -> str:
+    from urllib.parse import urlparse
+
+    return urlparse(url).path
+
+
+@contextlib.contextmanager
+def _ftp():
+    """An anonymous passive-mode session on the CHC FTP server."""
+    import ftplib
+
+    try:
+        ftp = ftplib.FTP(_FTP_HOST, timeout=_FTP_TIMEOUT)
+        ftp.login()
+        ftp.set_pasv(True)
+    except ftplib.Error as exc:
+        raise _FTPError(str(exc)) from exc
+    try:
+        yield ftp
+    except ftplib.Error as exc:
+        raise _FTPError(str(exc)) from exc
+    finally:
+        with contextlib.suppress(OSError, EOFError, ftplib.Error):
+            ftp.quit()
+        ftp.close()
+
+
+def _download(url: str, dest) -> None:
+    with _ftp() as ftp, open(dest, "wb") as fh:
+        ftp.retrbinary(f"RETR {_ftp_path(url)}", fh.write, blocksize=_FTP_BLOCK)
+
+
+@contextlib.contextmanager
+def _open_remote(url: str):
+    """Download one NetCDF over FTP to a temporary file and open it; removed on exit."""
+    import tempfile
+    from pathlib import Path
+
+    import xarray as xr
+
+    with tempfile.TemporaryDirectory(prefix="subc-") as tmp:
+        path = Path(tmp) / url.rsplit("/", 1)[-1]
+        _download(url, path)
+        with xr.open_dataset(path, engine="h5netcdf") as ds:
+            yield ds
+
+
+def _ftp_list(url: str) -> list[str]:
+    """File names in one FTP directory."""
+    with _ftp() as ftp:
+        return [name.rsplit("/", 1)[-1] for name in ftp.nlst(_ftp_path(url))]
 
 
 def _with_retry(fn, url: str, *, missing: str):
@@ -201,25 +250,19 @@ def _with_retry(fn, url: str, *, missing: str):
             if not _is_transient(exc) or attempt == len(_RETRY_DELAYS):
                 if status == 429:
                     raise DataError(
-                        "data.chc.ucsb.edu is rate-limiting requests (HTTP 429) and did not "
-                        "recover after retrying; wait several minutes and rerun with "
+                        "ftp.chc.ucsb.edu is refusing more connections (FTP 421) and did "
+                        "not recover after retrying; wait several minutes and rerun with "
                         "--workers 1."
                     ) from None
                 kind = "unreachable" if _is_transient(exc) else "unreadable"
                 raise DataError(f"CHC SubC {kind}: {url}: {_describe(exc)}") from None
             delay = _RETRY_DELAYS[attempt]
-            why = f"HTTP {status}" if status else type(exc).__name__
-            print(f"{why} from data.chc.ucsb.edu; retrying in {delay} s ...", file=sys.stderr)
+            print(
+                f"{_describe(exc)} from ftp.chc.ucsb.edu; retrying in {delay} s ...",
+                file=sys.stderr,
+            )
             _time.sleep(delay)
     raise AssertionError("unreachable")
-
-
-def _get_text(url: str) -> str:
-    import urllib.request
-
-    req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
-    with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT, context=_ssl_context()) as resp:
-        return resp.read().decode("utf-8", "replace")
 
 
 def _list_inits(model: str, var: str, month: int) -> list[_date]:
@@ -227,36 +270,18 @@ def _list_inits(model: str, var: str, month: int) -> list[_date]:
     import re
 
     url = f"{CHC_BASE}/{var}/daily/{model}/{month:02d}/"
-    html = _with_retry(
-        lambda: _get_text(url),
+    names = _with_retry(
+        lambda: _ftp_list(url),
         url,
         missing=f"no {var} forecasts for {model} on the CHC server ({url})",
     )
-    pattern = re.compile(rf'href="{re.escape(var)}_{re.escape(model)}_(\d{{8}})\.daily\.nc"')
-    found = {_date(int(m[:4]), int(m[4:6]), int(m[6:8])) for m in pattern.findall(html)}
+    pattern = re.compile(rf"{re.escape(var)}_{re.escape(model)}_(\d{{8}})\.daily\.nc")
+    found = set()
+    for name in names:
+        if m := pattern.fullmatch(name):
+            stamp = m.group(1)
+            found.add(_date(int(stamp[:4]), int(stamp[4:6]), int(stamp[6:8])))
     return sorted(found)
-
-
-def _filesystem():
-    import aiohttp
-    import fsspec
-
-    async def get_client(**kwargs):
-        return aiohttp.ClientSession(
-            connector=aiohttp.TCPConnector(ssl=_ssl_context()),
-            headers={"User-Agent": _USER_AGENT},
-            **kwargs,
-        )
-
-    return fsspec.filesystem("https", get_client=get_client, skip_instance_cache=True)
-
-
-def _open_remote(url: str):
-    """Open one forecast NetCDF lazily over HTTP range requests."""
-    import xarray as xr
-
-    handle = _filesystem().open(url, block_size=_BLOCK_SIZE, cache_type="blockcache")
-    return xr.open_dataset(handle, engine="h5netcdf")
 
 
 # --- reshaping ------------------------------------------------------------------------
@@ -315,6 +340,8 @@ def _to_field(da, *, var: str):
     order = ["number", "step"] + (["level"] if "level" in da.dims else [])
     da = da.transpose(*order, "latitude", "longitude")
     keep = {k: da.attrs[k] for k in ("units", "standard_name") if k in da.attrs}
+    if "units" in keep:
+        keep["units"] = _UNIT_ALIASES.get(keep["units"], keep["units"])
     da.attrs = keep
     return da.rename(var)
 

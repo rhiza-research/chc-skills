@@ -2,7 +2,8 @@
 
 Origin (no mirror yet):
 
-`https://data.chc.ucsb.edu/experimental/SubC/forecasts/`
+`ftp://ftp.chc.ucsb.edu/experimental/SubC/forecasts/`
+(also browsable at `https://data.chc.ucsb.edu/experimental/SubC/forecasts/`)
 
 ```
 {var}/daily/{model}/{MM}/{var}_{model}_{YYYYMMDD}.daily.nc
@@ -37,11 +38,17 @@ temperatures in K; `zg` in m.
 
 Chunking (tiles) varies: CFSv2 `(1, 4, 44, 30, 60)` (all members and leads per
 30°x60° tile), ECCC `(11, 1, 20, 91, 180)` (half the members, 20 leads, a
-quarter of the globe). A bbox read fetches the tiles it touches.
+quarter of the globe). The skill downloads whole files, so the tiling does not matter for it.
 
 ## Server behaviour
 
-- Byte ranges are supported.
-- Bursts of requests get HTTP 429 for several minutes.
-- The Let's Encrypt chain verifies against certifi's CA bundle; Python's default
-  context on Windows can fail it with "certificate has expired".
+CHC asks download scripts to use FTP (`ftp://ftp.chc.ucsb.edu/`, the same tree as
+`https://data.chc.ucsb.edu/`; CHC's note gives a `/pub/org/chc/` prefix, but the
+anonymous root is already the CHC tree). The HTTPS side answers bursts with HTTP 429
+for several minutes.
+
+- Anonymous login, passive mode. `REST` byte ranges work, but each one opens a new
+  data connection (~3.5 s), so the skill downloads whole files (~4 MB/s measured
+  2026-11-09) into a temporary directory and opens them locally.
+- Reply codes: 550 = no such file/directory; 421 = too many connections (retried
+  with backoff); other 4xx are temporary.

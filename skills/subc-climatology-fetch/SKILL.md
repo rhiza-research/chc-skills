@@ -2,7 +2,7 @@
 name: subc-climatology-fetch
 description: "Fetch one SubX model's lead-dependent hindcast climatology (1999-2016) from CHC SubC for an init date as a weather-skills forecast Zarr: the ensemble mean or pooled 5-95th percentiles of precipitation, near-surface air, max, min, dewpoint, or surface temperature, per lead day or over the 7/15/30-day window. Models: ECCC-GEPS8, EMC-GEFSv12_CPC, ESRL-FIMr1p1, GMAO-GEOS_V2p1_5daily, GMAO-GEOS_V3, NCEP-CFSv2, RSMAS-CCSM4. Use when a task needs a model's own climatology, e.g. to turn that model's forecast into anomalies or tercile/extreme categories."
 license: MIT
-compatibility: Requires Python 3.12 and uv. Reads data.chc.ucsb.edu directly over HTTPS range requests (no mirror yet). No credentials required.
+compatibility: Requires Python 3.12 and uv. Downloads from CHC's anonymous FTP server (ftp.chc.ucsb.edu, passive mode; no mirror yet). No credentials required.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py *)
 metadata:
   catalog-group: fetchers
@@ -60,16 +60,16 @@ The number of lead days is the model's hindcast length, e.g. 36 for GMAO-GEOS_V3
 - The 7d/15d/30d windows match `subc-mme-fetch`'s outlook windows, but that skill's anomalies are of the multi-model mean against its own climatology.
 - Percentiles do not add up: the 95th percentile of a 10-day total is not the sum of ten daily 95th percentiles. That is why quantiles of other windows are refused rather than computed.
 - For a series of consecutive windows (every week of the forecast), fetch `--outlook daily` and run `aggregate-temporal` on `step`, then `convert-to-totals` for precip.
-- Performance: the server sends about 0.5-1 MB/s. Only the requested fields are read: opening a file costs about 30 s, a daily field (also what a computed window reads) about 20 s more, and a precomputed 7/15/30-day field under a second. `--bbox` does not reduce the transfer (each field is one HDF5 chunk); GMAO-GEOS_V3 fields are four times larger.
+- Performance: each file is downloaded whole over FTP (about 4 MB/s): ~60 MB, about 15-25 s, for a 1° model, four times that for GMAO-GEOS_V3 (0.5°). `--bbox` does not reduce the transfer; `-v` fetches one file per variable.
 - `pr` window totals are already totals; do not convert them to totals again.
 
 ### Errors
 - Variable not published for the model → exit 2 listing the model's variables.
 - `--stat quantiles` with a window other than `7d`/`15d`/`30d` from the init, `--window-start` without a window `--outlook`, or an `--outlook` that is not `daily`/`Nd` → exit 2.
 - Window reaching past the model's last lead day → exit 1 giving the model's lead range.
-- File missing on the server (HTTP 404) → exit 1 naming the URL.
-- HTTP 429: data.chc.ucsb.edu rate-limits bursts for several minutes. The skill retries with backoff (15 s up to 4 min) and then exits 1; wait a few minutes and rerun with `--workers 1`.
-- Network failures and 5xx are retried the same way, then exit 1 as "unreachable".
+- File missing on the server (FTP 550) → exit 1 naming the URL.
+- FTP 421 (too many connections) and temporary 4xx replies are retried with backoff (15 s up to 4 min); the skill then exits 1; wait a few minutes and rerun with `--workers 1`.
+- Timeouts and dropped connections are retried the same way, then exit 1 as "unreachable"; any other failure exits 1 as "unreadable" with the underlying error.
 
 ### Examples
 ```bash

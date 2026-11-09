@@ -2,7 +2,7 @@
 name: subc-forecast-fetch
 description: "Fetch one SubX model's real-time ensemble forecast from CHC SubC for an init date as a weather-skills forecast Zarr: every member at every daily lead (32-45 days) of precipitation, temperatures, dewpoint, pressure, winds, radiation, soil moisture, snow, or pressure-level geopotential height and winds. Models: ECCC-GEPS8, EMC-GEFSv12_CPC, ESRL-FIMr1p1, GMAO-GEOS_V2p1_5daily, GMAO-GEOS_V3, NCEP-CFSv2, RSMAS-CCSM4. Use when a task needs an individual SubC model rather than the multi-model mean, e.g. with subc-climatology-fetch for that model's anomalies."
 license: MIT
-compatibility: Requires Python 3.12 and uv. Reads data.chc.ucsb.edu directly over HTTPS range requests (no mirror yet). No credentials required.
+compatibility: Requires Python 3.12 and uv. Downloads from CHC's anonymous FTP server (ftp.chc.ucsb.edu, passive mode; no mirror yet). No credentials required.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py *)
 metadata:
   catalog-group: fetchers
@@ -28,7 +28,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --model MODEL --probe-latest [VAR]
 - `--model` — `ECCC-GEPS8`, `EMC-GEFSv12_CPC`, `ESRL-FIMr1p1`, `GMAO-GEOS_V2p1_5daily`, `GMAO-GEOS_V3`, `NCEP-CFSv2`, `RSMAS-CCSM4`. One per call. Required.
 - `--date` — init date. Required unless probing. Each model has its own init calendar; a date without a file fails and lists that month's inits.
 - `--variable`, `-v` — repeat for several. Default: `pr`. Surface: `pr`, `tas`, `tasmax`, `tasmin`, `tdps`, `ts`, `psl`, `uas`, `vas`, `huss`, `cape`, `rlut`, `dlwrf`, `dswrf`, `ulwrf`, `uswrf`, `rad`, `hfls`, `hfss`, `stx`, `sty`, `mrro`, `mrso`, `sic`, `snc`, `snod`, `snwd`, `swe`. Pressure levels: `zg`, `ua`, `va`, `wap`. Not every model publishes every variable; a missing one fails naming the file.
-- `--bbox` — `N/W/S/E`. Keeps every grid cell that overlaps the box, and reads only those parts of the file. Default: global.
+- `--bbox` — `N/W/S/E`. Keeps every grid cell that overlaps the box. Default: global.
 - `--workers` — concurrent file reads, one per variable. Default: 2.
 - `--probe-latest` — print the newest init for `--model` (and `VAR`, default `pr`) as `YYYY-MM-DD`, or `none`, and exit, no `-o`. stderr gives its age.
 - `--output`, `-o` — output Zarr.
@@ -44,13 +44,13 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --model MODEL --probe-latest [VAR]
 - Anomalies: fetch the same model's climatology with `subc-climatology-fetch --model M --date <same init>` and `difference` forecast minus climatology; the climatology has no `number` dim, so it broadcasts over members. Aggregate both the same way first (`aggregate-temporal` on `step`, or the climatology's `--outlook Nd`) for weekly anomalies.
 - For the multi-model mean outlook, use `subc-mme-fetch`.
 - `pr` is a daily rate: run `aggregate-temporal` then `convert-to-totals` for weekly totals.
-- Performance: the server sends about 0.5-1 MB/s. Files are stored in tiles, so a country `--bbox` reads a fraction of the file: about 30 s for NCEP-CFSv2 over Kenya. Global fields are 30-140 MB per variable (ECCC-GEPS8 and GMAO-GEOS_V3 the largest), and ECCC-GEPS8's tiles are large, so even its bbox reads take minutes.
+- Performance: each variable's file is downloaded whole over FTP (about 4 MB/s), then subset; `--bbox` does not reduce the transfer. Measured 2026-11-09 over Kenya with `-v pr -v tas`: NCEP-CFSv2 about 12 s, ECCC-GEPS8 about 1 min. Files are 30-140 MB per variable (ECCC-GEPS8 and GMAO-GEOS_V3 the largest).
 
 ### Errors
 - No file for the init → exit 1 listing the inits published that month (or that none are).
 - Variable not published for the model → exit 1 naming the missing file.
-- HTTP 429: data.chc.ucsb.edu rate-limits bursts for several minutes. The skill retries with backoff (15 s up to 4 min) and then exits 1; wait a few minutes and rerun with `--workers 1`.
-- Network failures and 5xx are retried the same way, then exit 1 as "unreachable".
+- FTP 421 (too many connections) and temporary 4xx replies are retried with backoff (15 s up to 4 min); the skill then exits 1; wait a few minutes and rerun with `--workers 1`.
+- Timeouts and dropped connections are retried the same way, then exit 1 as "unreachable"; any other failure exits 1 as "unreadable" with the underlying error.
 
 ### Example
 ```bash

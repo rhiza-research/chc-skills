@@ -72,7 +72,7 @@ def _serve(mod, monkeypatch, files: dict[str, xr.Dataset]):
 def test_file_url(mod):
     url = mod._file_url("NCEP-CFSv2", "pr", date(2026, 1, 1))
     assert url == (
-        "https://data.chc.ucsb.edu/experimental/SubC/climatology/1999_2016"
+        "ftp://ftp.chc.ucsb.edu/experimental/SubC/climatology/1999_2016"
         "/pr/NCEP-CFSv2/01/pr_NCEP-CFSv2_0101.daily.nc"
     )
     assert mod._file_url("ECCC-GEPS8", "tas", date(2024, 2, 29)).endswith(
@@ -185,7 +185,7 @@ def _http_error(status):
     try:
         raise _Resp()
     except _Resp as cause:
-        err = FileNotFoundError("https://data.chc.ucsb.edu/...")
+        err = FileNotFoundError("ftp://ftp.chc.ucsb.edu/...")
         err.__cause__ = cause
         return err
 
@@ -232,7 +232,7 @@ def test_429_gives_up_with_actionable_error(mod, monkeypatch, tmp_path, capsys):
             "-o", str(tmp_path / "x.zarr"),
         )  # fmt: skip
     assert excinfo.value.code == 1
-    assert "rate-limiting" in capsys.readouterr().err
+    assert "FTP 421" in capsys.readouterr().err
 
 
 def _ramp_clim(var: str, n_lead: int = 30):
@@ -279,7 +279,7 @@ def test_window_past_last_lead_is_data_error(mod, monkeypatch, tmp_path, capsys)
 
 def _wrapped(cause: BaseException) -> FileNotFoundError:
     """fsspec's shape: a bare FileNotFoundError(url) with the real error as the cause."""
-    err = FileNotFoundError("https://data.chc.ucsb.edu/...")
+    err = FileNotFoundError("ftp://ftp.chc.ucsb.edu/...")
     err.__cause__ = cause
     return err
 
@@ -313,3 +313,24 @@ def test_unreadable_error_names_root_cause(mod, monkeypatch, tmp_path, capsys):
         )  # fmt: skip
     assert excinfo.value.code == 1
     assert "unreadable" in (err := capsys.readouterr().err) and "ValueError: bad HDF5" in err
+
+
+def test_ftp_reply_codes_map_to_retry_rules(mod):
+    assert mod._FTPError("550 No such file or directory").status == 404
+    assert mod._FTPError("421 Too many connections").status == 429
+    assert mod._is_transient(mod._FTPError("425 Can't open data connection"))
+    assert not mod._is_transient(mod._FTPError("530 Login incorrect"))
+
+
+def test_open_remote_downloads_then_cleans_up(mod, monkeypatch, tmp_path):
+    seen = {}
+
+    def fake_download(url, dest):
+        seen["path"] = dest
+        _fake_clim("pr").to_netcdf(dest, engine="h5netcdf")
+
+    monkeypatch.setattr(mod, "_download", fake_download)
+    with mod._open_remote(mod.CHC_BASE + "/x/y.daily.nc") as ds:
+        assert seen["path"].name == "y.daily.nc"
+        assert "pr" in ds.data_vars
+    assert not seen["path"].exists()
