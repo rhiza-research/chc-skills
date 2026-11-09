@@ -148,3 +148,28 @@ def test_phase_from_official_types(mod):
 def test_best_track_has_phase(mod, cache, tmp_path):
     ds = _fetch(mod, tmp_path, "--storm", "TestA", "--year", "2030", "--basin", "north_atlantic")
     assert list(ds["phase"].values[0][:6]) == ["tropical"] * 6
+
+
+def test_tropycal_imports_in_isolated_script_env():
+    """tropycal imports shapely and cartopy without declaring them; the dev venv hides that, so
+    import tropycal in a fresh env built only from the script's PEP 723 header."""
+    import re
+    import subprocess
+    import tomllib
+
+    uv = shutil.which("uv")
+    if uv is None:
+        pytest.skip("uv not on PATH")
+    script = Path(__file__).parents[1] / "scripts" / "fetch.py"
+    header = re.search(
+        r"^# /// script\n((?:^#.*\n)*?)^# ///", script.read_text(encoding="utf-8"), re.MULTILINE
+    )
+    meta = tomllib.loads("\n".join(line[2:] for line in header.group(1).splitlines()))
+    cmd = [uv, "run", "--isolated", "--no-project", "--python", "3.12"]
+    for dep in meta["dependencies"]:
+        cmd += ["--with", dep]
+    cmd += ["python", "-I", "-c", "import tropycal.tracks, tropycal.realtime"]
+    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600, check=False)
+    if proc.returncode != 0 and "Traceback" not in proc.stderr:  # uv itself failed (offline)
+        pytest.skip(f"could not build the isolated env: {proc.stderr[-500:]}")
+    assert proc.returncode == 0, proc.stderr[-2000:]

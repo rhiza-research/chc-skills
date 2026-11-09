@@ -5,6 +5,10 @@
 #   "tropycal==1.5.2",
 #   # tropycal imports matplotlib; <3.10 matches the plot skills
 #   "matplotlib>=3.8,<3.10",
+#   # tropycal imports shapely and cartopy at module level (tropycal.utils) but does not
+#   # declare them, so `import tropycal.tracks` / `tropycal.realtime` fails without these
+#   "shapely>=2.0",
+#   "cartopy>=0.22",
 #   "numpy",
 #   "pandas",
 #   "xarray",
