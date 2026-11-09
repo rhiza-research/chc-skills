@@ -8,7 +8,7 @@
 #   "xarray",
 # ]
 # ///
-"""Add, subtract, multiply or divide two Zarrs cell by cell, or one Zarr and a constant."""
+"""Add, subtract, multiply or divide Zarrs cell by cell, optionally with a constant."""
 
 from weather_skills_core import Dataset, UsageError, weather_skill
 from weather_skills_core.standard_utils import ensure_normalized_longitude
@@ -51,7 +51,7 @@ def _parse_constant(text):
     type=Dataset("any"),
     action="append",
     required=True,
-    help="A, then optionally B (pass twice for A op B; once with --constant).",
+    help="Operands in order: A, B, ... (A op B op C, left to right). One is enough with --constant.",
 )
 @weather_skill.argument(
     "--op",
@@ -61,12 +61,18 @@ def _parse_constant(text):
 )
 @weather_skill.argument(
     "--constant",
-    help="Use this number or quantity ('2', '25.4 mm', '7 day') as B instead of a second input.",
+    help="A number or quantity ('2', '25.4 mm', '100 %%') used as the last operand "
+    "(or the first with --constant-first).",
+)
+@weather_skill.argument(
+    "--constant-first",
+    action="store_true",
+    help="Put --constant before the inputs: VALUE op A op B ... (e.g. 100 %% - above - below).",
 )
 @weather_skill.argument("--variable", "-v", action="append")
 @weather_skill.argument("--units", help="Convert the result to these units (e.g. 'mm', '%%').")
-def arithmetic(ds, op, constant, variable, units, **kwargs):
-    """Add, subtract, multiply or divide two Zarrs cell by cell, or one Zarr and a constant."""
+def arithmetic(ds, op, constant, constant_first, variable, units, **kwargs):
+    """Add, subtract, multiply or divide Zarrs cell by cell, optionally with a constant."""
     import numpy as np
     import pint
     import pint_xarray
@@ -77,69 +83,77 @@ def arithmetic(ds, op, constant, variable, units, **kwargs):
         pint.OffsetUnitCalculusError,
         pint_xarray.errors.PintExceptionGroup,
     )
-    if constant is None and len(ds) != 2:
-        raise UsageError(f"pass two --input paths, or one with --constant (got {len(ds)})")
-    if constant is not None and len(ds) != 1:
-        raise UsageError(f"--constant takes one --input (got {len(ds)})")
-    ds_a = ensure_normalized_longitude(ds[0])
-    ds_b = ensure_normalized_longitude(ds[1]) if constant is None else None
+    if constant is None and len(ds) < 2:
+        raise UsageError(f"pass at least two --input paths, or one with --constant (got {len(ds)})")
+    if constant_first and constant is None:
+        raise UsageError("--constant-first needs --constant")
+    inputs = [ensure_normalized_longitude(d) for d in ds]
+    ds_a = inputs[0]
     const = _parse_constant(constant) if constant is not None else None
-    if const is not None and op == "divide" and float(const.magnitude) == 0:
+    if const is not None and op == "divide" and not constant_first and float(const.magnitude) == 0:
         raise UsageError("--constant 0 with --op divide")
 
-    pool = [v for v in ds_a.data_vars if ds_b is None or v in ds_b.data_vars]
+    pool = [v for v in ds_a.data_vars if all(v in d.data_vars for d in inputs[1:])]
     vars_ = list(dict.fromkeys(variable)) if variable else pool
     if not vars_:
+        listing = ", ".join(f"{list(d.data_vars)}" for d in inputs)
         raise UsageError(
-            f"inputs share no data variable (A: {list(ds_a.data_vars)}, "
-            f"B: {list(ds_b.data_vars)}); rename one to match first (rename skill)"
+            f"inputs share no data variable ({listing}); rename them to match first (rename skill)"
         )
     for v in vars_:
         if v not in pool:
-            where = "A" if ds_b is None else "both inputs"
+            where = "the input" if len(inputs) == 1 else "every input"
             raise UsageError(f"--variable {v!r} must be in {where}")
 
-    out = {}
-    for v in vars_:
-        a = _widen(ds_a[v], np)
-        if ds_b is not None:
-            b = _widen(ds_b[v], np)
-            only_a = [d for d in a.dims if d not in b.dims]
-            only_b = [d for d in b.dims if d not in a.dims]
-            if only_a and only_b:
-                raise UsageError(
-                    f"{v!r}: A has dims {only_a} that B lacks and B has {only_b} that A lacks; "
-                    "broadcasting would pair every A label with every B label. Put both on "
-                    "the same axis first (e.g. step-to-time)"
-                )
-            period_a = a.attrs.get(AGGREGATION_PERIOD_ATTR)
-            period_b = b.attrs.get(AGGREGATION_PERIOD_ATTR)
-            if (
-                op in ("add", "subtract")
-                and period_a
-                and period_b
-                and (looks_like_precip_total(a) or looks_like_precip_total(b))
-                and ureg.Quantity(period_a) != ureg.Quantity(period_b)
-            ):
-                raise UsageError(
-                    f"{v!r}: A is a {period_a} total and B a {period_b} total; combine totals "
-                    "over the same period (accumulate or aggregate-temporal both first)"
-                )
-        else:
-            b = const
+    def _apply(x, y, v):
         try:
             if op == "add":
-                res = a + b
-            elif op == "subtract":
-                res = a - b
-            elif op == "multiply":
-                res = a * b
-            else:
-                res = a / b
+                return x + y
+            if op == "subtract":
+                return x - y
+            if op == "multiply":
+                return x * y
+            return x / y
         except unit_errors as exc:
             raise UsageError(f"{v!r}: units do not allow {op}: {exc}") from None
         except ValueError as exc:  # unlabeled dims of different sizes
-            raise UsageError(f"{v!r}: cannot align A and B: {exc}") from None
+            raise UsageError(f"{v!r}: cannot align the inputs: {exc}") from None
+
+    out = {}
+    for v in vars_:
+        fields = [_widen(d[v], np) for d in inputs]
+        for i, b in enumerate(fields[1:], start=2):
+            seen = {d for f in fields[: i - 1] for d in f.dims}
+            only_a = [d for d in seen if d not in b.dims]
+            only_b = [d for d in b.dims if d not in seen]
+            if only_a and only_b:
+                raise UsageError(
+                    f"{v!r}: input {i} has dims {only_b} the earlier inputs lack, and they have "
+                    f"{only_a} it lacks; broadcasting would pair every label with every other. "
+                    "Put them on the same axis first (e.g. step-to-time)"
+                )
+        if op in ("add", "subtract"):
+            periods = {
+                str(f.attrs[AGGREGATION_PERIOD_ATTR]): f
+                for f in fields
+                if f.attrs.get(AGGREGATION_PERIOD_ATTR)
+            }
+            if len({ureg.Quantity(p) for p in periods}) > 1 and any(
+                looks_like_precip_total(f) for f in periods.values()
+            ):
+                raise UsageError(
+                    f"{v!r}: inputs are totals over different periods ({sorted(periods)}); "
+                    "combine totals over the same period (accumulate or aggregate-temporal first)"
+                )
+        if const is None:
+            operands = fields
+        elif constant_first:
+            operands = [const, *fields]
+        else:
+            operands = [*fields, const]
+        res = operands[0]
+        for nxt in operands[1:]:
+            res = _apply(res, nxt, v)
         empty = [d for d in res.dims if res.sizes[d] == 0]
         if empty:
             raise UsageError(
@@ -156,7 +170,8 @@ def arithmetic(ds, op, constant, variable, units, **kwargs):
             if op == "subtract" and res_units.dimensionality == "[temperature]":
                 if "delta_" not in str(res_units):
                     res = res.pint.to("delta_degC")
-            elif res_units.dimensionless:
+            elif res_units.dimensionless and res_units != ureg.percent:
+                # % + % stays %; mixed scales (mm / m, 1 / %) collapse to 1.
                 res = res.pint.to("dimensionless")
         if units:
             try:
@@ -181,7 +196,8 @@ def arithmetic(ds, op, constant, variable, units, **kwargs):
             # A ratio or product is not the input quantity: its CF names would mislead.
             for key in ("standard_name", "GRIB_name", "short_name", "cell_methods"):
                 attrs.pop(key, None)
-        label = "scaled" if const is not None and op in ("multiply", "divide") else _LABEL[op]
+        scaled = const is not None and len(inputs) == 1 and op in ("multiply", "divide")
+        label = "scaled" if scaled and not constant_first else _LABEL[op]
         long_name = str(attrs.get("long_name") or v)
         if label not in long_name.lower():
             attrs["long_name"] = f"{long_name} {label}"

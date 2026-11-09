@@ -107,3 +107,52 @@ def test_broadcast_guard(mod, tmp_path):
     with pytest.raises(SystemExit) as exc:
         _run(mod, tmp_path / "o.zarr", "-i", str(a), "-i", str(b), "--op", "divide")
     assert exc.value.code == 2
+
+
+def _prob(tmp_path, name, fill):
+    ds = make_forecast(n_step=2, fill=fill)
+    ds["tp"].attrs = {"units": "%", "long_name": "Probability"}
+    return str(write_zarr(ds, tmp_path / f"{name}.zarr"))
+
+
+def test_constant_first_minus_several_inputs(mod, tmp_path):
+    above, below = _prob(tmp_path, "above", 30.0), _prob(tmp_path, "below", 25.0)
+    args = ("-i", above, "-i", below, "--op", "subtract", "--constant-first")
+    res = _run(mod, tmp_path / "o.zarr", *args, "--constant", "100 %")
+    np.testing.assert_allclose(res["tp"].values, 45.0)
+    assert res["tp"].attrs["units"] == "%"
+    frac = _run(mod, tmp_path / "f.zarr", *args, "--constant", "1")
+    np.testing.assert_allclose(frac["tp"].values, 0.45)
+    assert frac["tp"].attrs["units"] == "1"
+
+
+def test_three_inputs_add(mod, tmp_path):
+    paths = [_prob(tmp_path, n, f) for n, f in (("a", 1.0), ("b", 2.0), ("c", 3.0))]
+    res = _run(mod, tmp_path / "o.zarr", *[x for p in paths for x in ("-i", p)], "--op", "add")
+    np.testing.assert_allclose(res["tp"].values, 6.0)
+
+
+def test_constant_first_divide(mod, tmp_path):
+    a, _ = _pair(tmp_path, a=4.0)
+    res = _run(
+        mod,
+        tmp_path / "o.zarr",
+        "-i",
+        str(a),
+        "--op",
+        "divide",
+        "--constant",
+        "2 mm",
+        "--constant-first",
+    )
+    np.testing.assert_allclose(res["tp"].values, 0.5)
+    assert res["tp"].attrs["units"] == "1"
+
+
+def test_constant_first_needs_constant(mod, tmp_path):
+    a, b = _pair(tmp_path)
+    with pytest.raises(SystemExit) as exc:
+        _run(
+            mod, tmp_path / "o.zarr", "-i", str(a), "-i", str(b), "--op", "add", "--constant-first"
+        )
+    assert exc.value.code == 2
