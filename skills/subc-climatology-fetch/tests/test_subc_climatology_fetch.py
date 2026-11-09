@@ -275,3 +275,41 @@ def test_window_past_last_lead_is_data_error(mod, monkeypatch, tmp_path, capsys)
         )  # fmt: skip
     assert excinfo.value.code == 1
     assert "lead days 0-29" in capsys.readouterr().err
+
+
+def _wrapped(cause: BaseException) -> FileNotFoundError:
+    """fsspec's shape: a bare FileNotFoundError(url) with the real error as the cause."""
+    err = FileNotFoundError("https://data.chc.ucsb.edu/...")
+    err.__cause__ = cause
+    return err
+
+
+def test_wrapped_timeout_is_retried(mod, monkeypatch, tmp_path):
+    calls = []
+
+    def fake_open(url):
+        calls.append(url)
+        if len(calls) < 2:
+            raise _wrapped(TimeoutError())
+        return _fake_clim("pr")
+
+    monkeypatch.setattr(mod, "_open_remote", fake_open)
+    monkeypatch.setattr(mod._time, "sleep", lambda s: None)
+    run_skill(
+        mod.fetch, "--date", "2026-01-01", "--model", "NCEP-CFSv2", "-v", "pr",
+        "-o", str(tmp_path / "t.zarr"),
+    )  # fmt: skip
+    assert len(calls) == 2
+
+
+def test_unreadable_error_names_root_cause(mod, monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(
+        mod, "_open_remote", lambda url: (_ for _ in ()).throw(_wrapped(ValueError("bad HDF5")))
+    )
+    with pytest.raises(SystemExit) as excinfo:
+        run_skill(
+            mod.fetch, "--date", "2026-01-01", "--model", "NCEP-CFSv2", "-v", "pr",
+            "-o", str(tmp_path / "x.zarr"),
+        )  # fmt: skip
+    assert excinfo.value.code == 1
+    assert "unreadable" in (err := capsys.readouterr().err) and "ValueError: bad HDF5" in err

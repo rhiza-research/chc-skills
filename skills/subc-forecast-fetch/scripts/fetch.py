@@ -147,16 +147,44 @@ def _http_status(exc: BaseException) -> int | None:
     return None
 
 
+def _exc_chain(exc: BaseException | None):
+    """``exc`` and its causes, outermost first (fsspec wraps the real error)."""
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        yield exc
+        exc = exc.__cause__ or exc.__context__
+
+
+def _describe(exc: BaseException) -> str:
+    """The innermost cause as ``Type: message``; fsspec's outer error is just the URL."""
+    root = list(_exc_chain(exc))[-1]
+    return f"{type(root).__name__}: {root}" if str(root) else type(root).__name__
+
+
 def _is_transient(exc: BaseException) -> bool:
     import asyncio
 
     status = _http_status(exc)
     if status is not None:
         return status == 429 or status >= 500
-    text = f"{type(exc).__name__} {exc}".lower()
-    return isinstance(exc, (TimeoutError, asyncio.TimeoutError, ConnectionError)) or any(
-        marker in text for marker in ("timeout", "timed out", "connection reset", "disconnect")
-    )
+    for err in _exc_chain(exc):
+        text = f"{type(err).__name__} {err}".lower()
+        if "certificate" in text or "ssl" in text:
+            return False
+        if isinstance(err, (TimeoutError, asyncio.TimeoutError, ConnectionError)) or any(
+            marker in text
+            for marker in (
+                "timeout",
+                "timed out",
+                "connection reset",
+                "disconnect",
+                "cannot connect",
+                "payload",
+            )
+        ):
+            return True
+    return False
 
 
 def _with_retry(fn, url: str, *, missing: str):
@@ -178,7 +206,7 @@ def _with_retry(fn, url: str, *, missing: str):
                         "--workers 1."
                     ) from None
                 kind = "unreachable" if _is_transient(exc) else "unreadable"
-                raise DataError(f"CHC SubC {kind}: {url}: {exc}") from None
+                raise DataError(f"CHC SubC {kind}: {url}: {_describe(exc)}") from None
             delay = _RETRY_DELAYS[attempt]
             why = f"HTTP {status}" if status else type(exc).__name__
             print(f"{why} from data.chc.ucsb.edu; retrying in {delay} s ...", file=sys.stderr)
