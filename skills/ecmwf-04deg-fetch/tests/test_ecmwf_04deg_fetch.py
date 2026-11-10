@@ -67,7 +67,7 @@ def test_fetch_layout_units_and_history(tmp_path, fetch_mod, mocked):
         np.testing.assert_allclose(tp.isel(number=2, step=0), 200.0)
         assert float(ds["latitude"].max()) <= 5.5 and float(ds["latitude"].min()) >= -5.0
         assert float(ds["longitude"].min()) >= 33.5 and float(ds["longitude"].max()) <= 42.5
-        assert ds["latitude"].values[0] > ds["latitude"].values[-1]
+        assert ds["latitude"].values[0] < ds["latitude"].values[-1]
         assert ds.attrs["weather_skills_source"] == "sheerwater-ecmwf-0_4:20261026"
     assert load_history(out)[-1]["skill"] == "ecmwf-04deg-fetch"
 

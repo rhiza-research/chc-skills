@@ -29,14 +29,16 @@ from weather_skills_core.units import (
 )
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "0.0.2"
+_SKILL_VERSION = "0.0.3"
 
-# Daily mirror of /home/nwp1/LIBS2/{7_day,Daily_Data} on the KMSA NWP workstation.
+# Daily mirror of /home/nwp1/LIBS2/{7_day,Daily_Data} on the KMSA NWP workstation, plus
+# full_wrf/: whole WRF output files for single runs.
 _DEFAULT_ROOT = "gs://sheerwater-datalake/kmsa-wrf"
 # --product → archive folder under the root.
-_PRODUCTS = {"7day": "7_day", "daily": "Daily_Data"}
-_VARIABLES = ("tp", "t2m")
-_FILE_RE = re.compile(r"^(\d{8})_to_(\d{8})_fcst\.nc$")
+_PRODUCTS = {"7day": "7_day", "daily": "Daily_Data", "full": "full_wrf"}
+# --product → file name pattern; group 1 is the YYYYMMDD run start date.
+_RUN_RE = re.compile(r"^(\d{8})_to_(\d{8})_fcst\.nc$")
+_FILE_RES = {"7day": _RUN_RE, "daily": _RUN_RE, "full": re.compile(r"^wrf_full_(\d{8})\.nc$")}
 
 
 @weather_skill(name="kmsa-wrf-fetch", version=_SKILL_VERSION)
@@ -44,13 +46,17 @@ _FILE_RE = re.compile(r"^(\d{8})_to_(\d{8})_fcst\.nc$")
     "--product",
     default="7day",
     choices=list(_PRODUCTS),
-    help="7day: the 7- to 8-day run (7_day/); daily: the 3-day run (Daily_Data/). Default 7day.",
+    help=(
+        "7day: the 7- to 8-day run (7_day/); daily: the 3-day run (Daily_Data/); full: every "
+        "WRF output field of a run (full_wrf/wrf_full_YYYYMMDD.nc). Default 7day."
+    ),
 )
 @weather_skill.argument(
     "--root",
     default=_DEFAULT_ROOT,
     help=(
-        f"gs:// prefix or local folder holding 7_day/ and Daily_Data/. Default: {_DEFAULT_ROOT}."
+        "gs:// prefix or local folder holding 7_day/, Daily_Data/ and full_wrf/. "
+        f"Default: {_DEFAULT_ROOT}."
     ),
 )
 @weather_skill.argument("--date", help="Run start date, as in the archive filename.")
@@ -59,8 +65,10 @@ _FILE_RE = re.compile(r"^(\d{8})_to_(\d{8})_fcst\.nc$")
     "--variable",
     "-v",
     action="append",
-    choices=list(_VARIABLES),
-    help="tp (total precipitation) or t2m (2 m temperature); repeat for both. Default: both.",
+    help=(
+        "tp (total precipitation) or t2m (2 m temperature); with --product full also any WRF "
+        "field by its name in the file (u10, psfc, qvapor, ...). Repeatable. Default: all."
+    ),
 )
 @weather_skill.argument(
     "--probe-latest",
@@ -105,7 +113,7 @@ def fetch(product, root, date, bbox, variable, probe_latest, **kwargs):
             raise DataError(f"archive folder not found: {local}")
         names = [p.name for p in local.iterdir()]
     # YYYYMMDD run start date → file name, for every well-named NetCDF.
-    runs = {m.group(1): m.group(0) for m in map(_FILE_RE.match, names) if m}
+    runs = {m.group(1): m.group(0) for m in map(_FILE_RES[product].match, names) if m}
 
     if probe_latest:
         latest = max(runs) if runs else None
@@ -115,22 +123,23 @@ def fetch(product, root, date, bbox, variable, probe_latest, **kwargs):
     stamp = date.strftime("%Y%m%d")
     if stamp not in runs:
         raise DataError(
-            f"no {product} run starting {date.isoformat()} in {folder} "
-            f"(expected {stamp}_to_YYYYMMDD_fcst.nc). Use --probe-latest for the newest run."
+            f"no {product} run starting {date.isoformat()} in {folder}. "
+            "Use --probe-latest for the newest run."
         )
     name = runs[stamp]
     print(f"Reading {folder}/{name}", file=sys.stderr)
 
-    with tempfile.TemporaryDirectory() as tmp:
-        if remote:
-            path = Path(tmp) / name
-            fs.get(f"{folder}/{name}", str(path))
-        else:
-            path = local / name
-        # Units "hours since 1-1-1" make xarray warn about the ambiguous year; pad it.
-        with xr.open_dataset(path, decode_times=False) as raw:
-            raw["time"].attrs["units"] = "hours since 0001-01-01 00:00:00"
-            ds = xr.decode_cf(raw).load()
+    # Read lazily and load only after the variable and bbox subset: full files are ~4 GB.
+    tmp = tempfile.TemporaryDirectory()
+    if remote:
+        path = Path(tmp.name) / name
+        fs.get(f"{folder}/{name}", str(path))
+    else:
+        path = local / name
+    raw = xr.open_dataset(path, decode_times=False)
+    # Units "hours since 1-1-1" make xarray warn about the ambiguous year; pad it.
+    raw["time"].attrs["units"] = "hours since 0001-01-01 00:00:00"
+    ds = xr.decode_cf(raw)
 
     missing = [v for v in ("rainc", "rainnc", "t2") if v not in ds.data_vars]
     if missing:
@@ -161,6 +170,9 @@ def fetch(product, root, date, bbox, variable, probe_latest, **kwargs):
             "t2m": ds["t2"].isel(lev=0, drop=True),
         }
     )
+    if product == "full":
+        # Every WRF field as it is in the file, under its WRF name.
+        out = out.merge(ds)
     out = out.rename({"lat": "latitude", "lon": "longitude"})
     out = out.assign_coords(step=("time", times - init)).swap_dims({"time": "step"})
     out = out.drop_vars("time").assign_coords(time=init)
@@ -171,12 +183,21 @@ def fetch(product, root, date, bbox, variable, probe_latest, **kwargs):
         standard_name="forecast_period", long_name="time since forecast_reference_time"
     )
     if variable:
+        unknown = sorted(set(variable) - set(out.data_vars))
+        if unknown:
+            raise UsageError(
+                f"no variable {', '.join(unknown)} in the {product} product; "
+                f"it has {', '.join(out.data_vars)}."
+            )
         out = out[variable]
 
     if bbox is not None:
         out = bbox_subset(out, bbox)
     else:
         out = ensure_normalized_longitude(out)
+    out = out.load()
+    raw.close()
+    tmp.cleanup()
 
     last_lead = (times[-1] - init) / np.timedelta64(1, "h")
     print(
