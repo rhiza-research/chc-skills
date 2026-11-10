@@ -1,25 +1,18 @@
 # iod-enso-fetch sources
 
-## Observations
+## Indices
 
-Page: https://www.bom.gov.au/climate/enso/
+BoM page: https://www.bom.gov.au/climate/enso/ · NOAA CPC page: https://www.cpc.ncep.noaa.gov/data/indices/
 
-| `--index` | Graph | Text series |
-| --- | --- | --- |
-| `iod` | `https://www.bom.gov.au/clim_data/IDCK000072/iod1.png` | `IDCK000072/iod_1.txt` |
-| `enso`, `relative-nino3.4` | `https://www.bom.gov.au/clim_data/IDCK000072/rnino_3.4.png` | `IDCK000072/rnino_3.4.txt` |
-| `nino3.4` | `https://www.bom.gov.au/clim_data/IDCK000072/nino3_4.png` | `IDCK000072/nino_3.4.txt` |
-| `soi` | `https://www.bom.gov.au/clim_data/IDCKGSM000/soi30.png` | `IDCKGSM000/soi.txt` |
-
-## NOAA CPC
-
-Page: https://www.cpc.ncep.noaa.gov/data/indices/
-
-| `--index` | Text series |
-| --- | --- |
-| `roni` | `https://www.cpc.ncep.noaa.gov/data/indices/RONI.ascii.txt` |
-| `cpc-relative-nino3.4-monthly` | `https://www.cpc.ncep.noaa.gov/data/indices/Rnino34.ascii.txt` |
-| `cpc-relative-nino3.4-weekly` | `https://www.cpc.ncep.noaa.gov/data/indices/rel_wksst9120.txt` |
+| `--index` | Agency | Graph | Text series |
+| --- | --- | --- | --- |
+| `iod` | BoM | `https://www.bom.gov.au/clim_data/IDCK000072/iod1.png` | `https://www.bom.gov.au/clim_data/IDCK000072/iod_1.txt` |
+| `enso`, `relative-nino3.4` | BoM | `https://www.bom.gov.au/clim_data/IDCK000072/rnino_3.4.png` | `https://www.bom.gov.au/clim_data/IDCK000072/rnino_3.4.txt` |
+| `nino3.4` | BoM | `https://www.bom.gov.au/clim_data/IDCK000072/nino3_4.png` | `https://www.bom.gov.au/clim_data/IDCK000072/nino_3.4.txt` |
+| `soi` | BoM | `https://www.bom.gov.au/clim_data/IDCKGSM000/soi30.png` | `https://www.bom.gov.au/clim_data/IDCKGSM000/soi.txt` |
+| `roni` | NOAA CPC | none | `https://www.cpc.ncep.noaa.gov/data/indices/RONI.ascii.txt` |
+| `cpc-relative-nino3.4-monthly` | NOAA CPC | none | `https://www.cpc.ncep.noaa.gov/data/indices/Rnino34.ascii.txt` |
+| `cpc-relative-nino3.4-weekly` | NOAA CPC | none | `https://www.cpc.ncep.noaa.gov/data/indices/rel_wksst9120.txt` |
 
 ## ACCESS-S forecasts
 
