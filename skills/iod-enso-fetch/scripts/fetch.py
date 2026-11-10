@@ -39,6 +39,10 @@ _HTTP_TIMEOUT = 60
 
 # NOAA CPC RONI: 3-month running seasons (DJF ... NDJ) from 1950, one text file.
 RONI_URL = "https://www.cpc.ncep.noaa.gov/data/indices/RONI.ascii.txt"
+# CPC weekly relative Niño SSTs (OISST, weeks centred on Wednesday) from Sept 1981.
+CPC_REL_WEEKLY_URL = "https://www.cpc.ncep.noaa.gov/data/indices/rel_wksst9120.txt"
+# CPC monthly relative Niño3.4 (ERSSTv5, unsmoothed) from Dec 1949; RONI is its 3-month mean.
+CPC_REL_MONTHLY_URL = "https://www.cpc.ncep.noaa.gov/data/indices/Rnino34.ascii.txt"
 RONI_SEASONS = ("DJF", "JFM", "FMA", "MAM", "AMJ", "MJJ", "JJA", "JAS", "ASO", "SON", "OND", "NDJ")
 
 # BoM switches Niño outlook plumes to Relative Niño filenames on this issue date.
@@ -99,9 +103,21 @@ INDEX_VARS: dict[str, tuple[str, str, str]] = {
         "Traditional Niño3.4 sea surface temperature anomaly",
     ),
     "soi": ("soi", "1", "30-day Troup Southern Oscillation Index"),
+    "cpc-relative-nino3.4-monthly": (
+        "relative_nino34",
+        "degree_Celsius",
+        "NOAA CPC monthly relative Niño3.4 sea surface temperature anomaly",
+    ),
+    "cpc-relative-nino3.4-weekly": (
+        "relative_nino34",
+        "degree_Celsius",
+        "NOAA CPC weekly relative Niño3.4 sea surface temperature anomaly",
+    ),
 }
 
-INDEX_CHOICES = (*INDEX_FILES, "roni")
+# NOAA CPC indices published as text tables only: no graph, no forecast.
+CPC_INDICES = ("roni", "cpc-relative-nino3.4-monthly", "cpc-relative-nino3.4-weekly")
+INDEX_CHOICES = (*INDEX_FILES, *CPC_INDICES)
 PRODUCT_CHOICES = ("observation", "forecast")
 FORMAT_CHOICES = ("figure", "data")
 _FIGURE_SUFFIXES = {".png", ".jpg", ".jpeg"}
@@ -135,6 +151,10 @@ def _image_url(index: str) -> str:
 def _obs_data_url(index: str) -> str:
     if index == "roni":
         return RONI_URL
+    if index == "cpc-relative-nino3.4-weekly":
+        return CPC_REL_WEEKLY_URL
+    if index == "cpc-relative-nino3.4-monthly":
+        return CPC_REL_MONTHLY_URL
     if index not in INDEX_DATA_FILES:
         raise UsageError(f"unknown --index {index!r}; choose one of: {', '.join(INDEX_CHOICES)}")
     product, filename = INDEX_DATA_FILES[index]
@@ -379,6 +399,71 @@ def _roni_dataset(text: str) -> xr.Dataset:
     return ds
 
 
+def _cpc_monthly_dataset(text: str) -> xr.Dataset:
+    """Parse CPC ``YR MTH ANOM`` rows; time is the first of each month."""
+    if text.lstrip().startswith("<"):
+        raise DataError("NOAA CPC monthly download returned HTML, not the text table.")
+    times, values = [], []
+    for line_no, line in enumerate(text.splitlines(), start=1):
+        parts = line.split()
+        if not parts or parts[0] == "YR":
+            continue
+        if len(parts) != 3:
+            raise DataError(f"NOAA CPC monthly line {line_no} is not 'YR MTH ANOM': {line!r}")
+        times.append(np.datetime64(f"{int(parts[0]):04d}-{int(parts[1]):02d}-01", "ns"))
+        value = _parse_float(parts[2])
+        values.append(np.nan if value <= -99 else value)  # CPC marks missing as -99.9
+    if not times:
+        raise DataError("NOAA CPC monthly text listed no values.")
+    times = np.asarray(times)
+    name, units, long_name = INDEX_VARS["cpc-relative-nino3.4-monthly"]
+    ds = xr.Dataset(
+        {name: ("time", np.asarray(values, dtype=np.float64))},
+        coords={"time": times, "time_bounds": (("time", "nv"), _month_time_bounds(times))},
+    )
+    ds[name].attrs.update(
+        long_name=long_name,
+        standard_name="sea_surface_temperature_anomaly",
+        units=units,
+        comment="Monthly ERSSTv5 index; time is the first of the month.",
+    )
+    stamp_cf_coords(ds)
+    ds["time"].attrs["bounds"] = "time_bounds"
+    ds.attrs.update(Conventions="CF-1.13", weather_skills_source="noaa-cpc")
+    # Month lengths vary; time_bounds describe the cells.
+    return ds
+
+
+def _cpc_weekly_dataset(text: str) -> xr.Dataset:
+    """Parse CPC ``DDMONYYYY n12 n3 n34 n4`` rows; keep the Niño3.4 column."""
+    if text.lstrip().startswith("<"):
+        raise DataError("NOAA CPC weekly download returned HTML, not the text table.")
+    times, values = [], []
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) != 5:
+            continue  # title and column-header lines
+        try:
+            week = datetime.strptime(parts[0], "%d%b%Y").date()
+        except ValueError:
+            continue
+        times.append(np.datetime64(week.isoformat(), "ns"))
+        values.append(_parse_float(parts[3]))
+    if not times:
+        raise DataError("NOAA CPC weekly text listed no values.")
+    name, units, long_name = INDEX_VARS["cpc-relative-nino3.4-weekly"]
+    ds = xr.Dataset({name: ("time", np.asarray(values, dtype=np.float64))}, coords={"time": times})
+    ds[name].attrs.update(
+        long_name=long_name,
+        standard_name="sea_surface_temperature_anomaly",
+        units=units,
+        comment="Weekly OISST index; time is the week's centre date.",
+    )
+    stamp_cf_coords(ds)
+    ds.attrs.update(Conventions="CF-1.13", weather_skills_source="noaa-cpc")
+    return stamp_data_interval(ds, period="7 day")
+
+
 def _parse_month_label(label: str) -> date:
     try:
         return datetime.strptime(label.strip(), "%b %Y").replace(tzinfo=UTC).date().replace(day=1)
@@ -517,7 +602,9 @@ def _resolve_output_format(output_format: str | None, output) -> str:
         "Index: iod (weekly DMI), enso / relative-nino3.4 "
         "(operational Relative Niño3.4), nino3.4 (traditional), or soi "
         "(30-day SOI; observation only), or roni (NOAA CPC 3-month Relative "
-        "Oceanic Niño Index from 1950; Zarr data only)."
+        "Oceanic Niño Index from 1950), cpc-relative-nino3.4-monthly (NOAA CPC "
+        "monthly relative Niño3.4 from 1949-12), or cpc-relative-nino3.4-weekly "
+        "(NOAA CPC weekly relative Niño3.4 from 1981). CPC indices are Zarr data only."
     ),
 )
 @weather_skill.argument(
@@ -570,15 +657,14 @@ def fetch(index, product, date, output, output_format, probe_latest, **kwargs):
         )
 
     kind = _resolve_output_format(output_format, output)
-    if index == "roni":
-        # NOAA publishes RONI as a text table only: no graph, no forecast.
+    if index in CPC_INDICES:
         if (
             product == "forecast"
             or output_format == "figure"
             or (output is not None and Path(output).suffix.lower() != ".zarr")
         ):
             raise UsageError(
-                "--index roni is NOAA observation data only; "
+                f"--index {index} is NOAA observation data only; "
                 "pass --product observation and -o OUT.zarr."
             )
         kind = "data"
@@ -624,6 +710,10 @@ def fetch(index, product, date, output, output_format, probe_latest, **kwargs):
                 ) from exc
             if index == "roni":
                 return _roni_dataset(decoded)
+            if index == "cpc-relative-nino3.4-weekly":
+                return _cpc_weekly_dataset(decoded)
+            if index == "cpc-relative-nino3.4-monthly":
+                return _cpc_monthly_dataset(decoded)
             return _obs_dataset(index, decoded)
     else:
         issue = _resolve_issue_date(date, _archive_dates())

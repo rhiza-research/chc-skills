@@ -21,6 +21,14 @@ Text series: `https://www.cpc.ncep.noaa.gov/data/indices/RONI.ascii.txt`
 
 Rows are `SEAS YR ANOM` after a header line, for example `DJF  1950 -1.19`. `DJF` of year Y covers Dec Y-1 to Feb Y. The Zarr `time` is the season's middle month.
 
+Monthly relative Niño3.4 (`--index cpc-relative-nino3.4-monthly`): `https://www.cpc.ncep.noaa.gov/data/indices/Rnino34.ascii.txt`
+
+Rows are `YR MTH ANOM` after a header line, for example `1949  12  -1.03`. ERSSTv5, unsmoothed; RONI is its 3-month running mean.
+
+Weekly relative Niño SSTs (`--index cpc-relative-nino3.4-weekly`): `https://www.cpc.ncep.noaa.gov/data/indices/rel_wksst9120.txt`
+
+After title and column-header lines, rows are `DDMONYYYY n12 n3 n34 n4` (Niño1+2, Niño3, Niño3.4, Niño4 relative anomalies), for example `04NOV2026  4.7  3.5  2.3  0.2`. The date is the week's centre; the skill keeps the Niño3.4 column.
+
 ## ACCESS-S forecasts
 
 Page: https://www.bom.gov.au/climate/ocean/outlooks/?index=iod#tabs=Graphs

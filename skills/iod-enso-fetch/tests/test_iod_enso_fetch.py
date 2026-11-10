@@ -296,6 +296,8 @@ def test_all_page_indices_registered(mod):
         "relative-nino3.4",
         "soi",
         "roni",
+        "cpc-relative-nino3.4-monthly",
+        "cpc-relative-nino3.4-weekly",
     }
     assert set(mod.INDEX_DATA_FILES) == set(mod.INDEX_FILES)
 
@@ -509,8 +511,85 @@ def test_fetch_roni_zarr(mod, monkeypatch, tmp_path):
         ["--format", "figure", "-o", "x.zarr"],
     ],
 )
-def test_roni_rejects_figure_and_forecast(mod, tmp_path, monkeypatch, extra):
+@pytest.mark.parametrize(
+    "index", ["roni", "cpc-relative-nino3.4-monthly", "cpc-relative-nino3.4-weekly"]
+)
+def test_cpc_rejects_figure_and_forecast(mod, tmp_path, monkeypatch, extra, index):
     monkeypatch.chdir(tmp_path)
     with pytest.raises(SystemExit) as exc:
-        run_skill(mod.fetch, "--index", "roni", *extra)
+        run_skill(mod.fetch, "--index", index, *extra)
     assert exc.value.code == 2
+
+
+CPC_WEEKLY_SAMPLE = (
+    "Weekly Relative SST data starts week centered on 9Sept1981\n\n"
+    "                Nino1+2      Nino3      Nino34     Nino4\n"
+    " Week             SSTA       SSTA       SSTA       SSTA\n"
+    " 09SEP1981        -0.4       -0.1       -0.1       -0.1\n"
+    " 04NOV2026         4.7        3.5        2.3        0.2\n"
+)
+
+
+def test_cpc_weekly_dataset(mod):
+    ds = mod._cpc_weekly_dataset(CPC_WEEKLY_SAMPLE)
+    assert list(ds["time"].values) == [
+        np.datetime64("1981-09-09", "ns"),
+        np.datetime64("2026-11-04", "ns"),
+    ]
+    assert list(ds["relative_nino34"].values) == [-0.1, 2.3]
+    assert ds["relative_nino34"].attrs["data_interval"] == "7 day"
+
+
+def test_cpc_weekly_dataset_rejects_html(mod):
+    with pytest.raises(DataError, match="HTML"):
+        mod._cpc_weekly_dataset("<html>")
+
+
+def test_fetch_cpc_weekly_zarr(mod, monkeypatch, tmp_path):
+    out = tmp_path / "w.zarr"
+    seen = {}
+
+    def fake_read(url, *, referer=None, accept=None):
+        seen["url"] = url
+        return CPC_WEEKLY_SAMPLE.encode(), "text/plain"
+
+    monkeypatch.setattr(mod, "_read_url", fake_read)
+    run_skill(mod.fetch, "--index", "cpc-relative-nino3.4-weekly", "-o", str(out))
+    ds = xr.open_zarr(out, consolidated=True)
+    assert seen["url"] == mod.CPC_REL_WEEKLY_URL
+    assert ds.sizes["time"] == 2
+
+
+CPC_MONTHLY_SAMPLE = "YR   MTH   ANOM\n1949  12  -1.03\n1950   1  -1.34\n2026  10   2.16\n"
+
+
+def test_cpc_monthly_dataset(mod):
+    ds = mod._cpc_monthly_dataset(CPC_MONTHLY_SAMPLE)
+    assert list(ds["time"].values) == [
+        np.datetime64("1949-12-01", "ns"),
+        np.datetime64("1950-01-01", "ns"),
+        np.datetime64("2026-10-01", "ns"),
+    ]
+    assert ds["time_bounds"].values[0, 1] == np.datetime64("1950-01-01", "ns")
+    assert list(ds["relative_nino34"].values) == [-1.03, -1.34, 2.16]
+    assert "data_interval" not in ds["relative_nino34"].attrs
+
+
+def test_cpc_monthly_dataset_rejects_bad_rows(mod):
+    with pytest.raises(DataError, match="line 2"):
+        mod._cpc_monthly_dataset("YR MTH ANOM\n1950 1\n")
+
+
+def test_fetch_cpc_monthly_zarr(mod, monkeypatch, tmp_path):
+    out = tmp_path / "m.zarr"
+    seen = {}
+
+    def fake_read(url, *, referer=None, accept=None):
+        seen["url"] = url
+        return CPC_MONTHLY_SAMPLE.encode(), "text/plain"
+
+    monkeypatch.setattr(mod, "_read_url", fake_read)
+    run_skill(mod.fetch, "--index", "cpc-relative-nino3.4-monthly", "-o", str(out))
+    ds = xr.open_zarr(out, consolidated=True)
+    assert seen["url"] == mod.CPC_REL_MONTHLY_URL
+    assert ds.sizes["time"] == 3
