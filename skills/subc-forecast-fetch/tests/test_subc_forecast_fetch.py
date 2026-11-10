@@ -53,8 +53,15 @@ def _fake_forecast(
 
 
 @pytest.fixture
-def mod():
-    return load_skill("subc-forecast-fetch", "fetch")
+def mod(monkeypatch):
+    m = load_skill("subc-forecast-fetch", "fetch")
+
+    def no_mirror(var):
+        raise FileNotFoundError("no mirror in tests")
+
+    # Offline by default: the mirror is unreachable, so reads fall back to the CHC path.
+    monkeypatch.setattr(m, "_open_mirror", no_mirror)
+    return m
 
 
 def _serve(mod, monkeypatch, files: dict[str, xr.Dataset]):
@@ -321,3 +328,86 @@ def test_iridl_kelvin_scale_units(mod, monkeypatch, tmp_path):
     ds = xr.open_zarr(out, consolidated=True)
     assert ds["tas"].attrs["units"] == "degree_Celsius"
     assert float(ds["tas"].mean()) == pytest.approx(300 - 273.15, abs=1e-3)
+
+
+def _mirror_store(mod, tmp_path, model="NCEP-CFSv2", inits=("2026-11-08", "2026-11-09")):
+    """A plain-Zarr stand-in for the Icechunk mirror: one group per model, inits on time."""
+    lats = np.arange(-90.0, 91.0, 30.0, dtype=np.float32)
+    lons = np.arange(-180.0, 180.0, 30.0, dtype=np.float32)
+    times = np.array([np.datetime64(d, "ns") for d in inits])
+    steps = (np.arange(5) * 86400e9).astype("timedelta64[ns]")
+    data = np.full((len(times), 4, 5, lats.size, lons.size), 2.0, dtype=np.float32)
+    ds = xr.Dataset(
+        {"pr": (("time", "number", "step", "latitude", "longitude"), data)},
+        coords={
+            "time": times, "number": np.arange(1, 5), "step": steps,
+            "latitude": lats, "longitude": lons,
+        },
+    )  # fmt: skip
+    ds["pr"].attrs.update(units="mm day-1", standard_name="lwe_precipitation_rate")
+    ds = ds.assign_coords(valid_time=ds["time"] + ds["step"])
+    path = tmp_path / "mirror.zarr"
+    ds.to_zarr(path, group=model, consolidated=False)
+    return str(path)
+
+
+def test_reads_from_mirror_first(mod, monkeypatch, tmp_path):
+    store = _mirror_store(mod, tmp_path)
+    monkeypatch.setattr(mod, "_open_mirror", lambda var: store)
+    monkeypatch.setattr(
+        mod, "_open_remote", lambda url: (_ for _ in ()).throw(AssertionError("CHC was read"))
+    )
+    out = tmp_path / "m.zarr"
+    run_skill(
+        mod.fetch, "--model", "NCEP-CFSv2", "--date", "2026-11-09", "--bbox", "5/34/-5/42",
+        "-o", str(out),
+    )  # fmt: skip
+    ds = xr.open_zarr(out, consolidated=True)
+    assert ds["pr"].dims == ("number", "step", "latitude", "longitude")
+    assert ds["time"].values == np.datetime64("2026-11-09", "ns")
+    assert list(ds["longitude"].values) == [30.0] and list(ds["latitude"].values) == [0.0]
+    assert ds["pr"].attrs["units"] == "mm day-1"
+    assert float(ds["pr"].mean()) == pytest.approx(2.0)
+
+
+def test_init_missing_from_mirror_falls_back_to_chc(mod, monkeypatch, tmp_path, capsys):
+    store = _mirror_store(mod, tmp_path, inits=("2026-11-08",))
+    monkeypatch.setattr(mod, "_open_mirror", lambda var: store)
+    _serve(mod, monkeypatch, {"pr": _fake_forecast("pr", fill=1 / 86400)})
+    out = tmp_path / "f.zarr"
+    run_skill(mod.fetch, "--model", "NCEP-CFSv2", "--date", "2026-11-09", "-o", str(out))
+    assert "not on the mirror yet" in capsys.readouterr().err
+    assert float(xr.open_zarr(out)["pr"].mean()) == pytest.approx(1.0, rel=1e-4)
+
+
+def test_source_mirror_does_not_fall_back(mod, monkeypatch, tmp_path):
+    store = _mirror_store(mod, tmp_path, inits=("2026-11-08",))
+    monkeypatch.setattr(mod, "_open_mirror", lambda var: store)
+    with pytest.raises(SystemExit) as excinfo:
+        run_skill(
+            mod.fetch, "--model", "NCEP-CFSv2", "--date", "2026-11-09", "--source", "mirror",
+            "-o", str(tmp_path / "x.zarr"),
+        )  # fmt: skip
+    assert excinfo.value.code == 1
+
+
+def test_source_chc_skips_mirror(mod, monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        mod, "_open_mirror", lambda var: (_ for _ in ()).throw(AssertionError("mirror opened"))
+    )
+    _serve(mod, monkeypatch, {"pr": _fake_forecast("pr")})
+    run_skill(
+        mod.fetch, "--model", "NCEP-CFSv2", "--date", "2026-11-09", "--source", "chc",
+        "-o", str(tmp_path / "c.zarr"),
+    )  # fmt: skip
+
+
+def test_mirror_env_none_disables_mirror(mod, monkeypatch, tmp_path):
+    monkeypatch.setenv("SUBC_FORECAST_MIRROR", "none")
+    monkeypatch.setattr(
+        mod, "_open_mirror", lambda var: (_ for _ in ()).throw(AssertionError("mirror opened"))
+    )
+    _serve(mod, monkeypatch, {"pr": _fake_forecast("pr")})
+    run_skill(
+        mod.fetch, "--model", "NCEP-CFSv2", "--date", "2026-11-09", "-o", str(tmp_path / "n.zarr")
+    )

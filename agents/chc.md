@@ -51,7 +51,9 @@ weather-skills transforms and plotters when those are available (for example
   irregular per model (CFSv2 daily, the others weekly or twice weekly): get
   one with `--model M --probe-latest VAR` (stdout `YYYY-MM-DD`) rather than
   guessing; a missing init fails and lists that month's inits. Use `--bbox` —
-  the files are tiled, so a country read is far smaller than global. `pr` is a
+  it reads the tiled Icechunk mirror first (only the tiles the box
+  touches) and CHC's FTP server for inits or variables the mirror lacks (`pr`
+  from 2026-09-01 is mirrored). `pr` is a
   daily rate in `mm day-1`; dims are `(number, step[, level], latitude,
   longitude)`. For a model anomaly, fetch `subc-climatology-fetch` with the
   same `--model` and `--date` and `difference` the two (aggregate both the

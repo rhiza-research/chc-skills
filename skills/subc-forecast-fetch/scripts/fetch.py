@@ -5,8 +5,10 @@
 #   "cftime>=1.6",
 #   "h5netcdf",
 #   "h5py",
+#   "icechunk>=2.3",
 #   "numpy",
 #   "xarray",
+#   "zarr>=3",
 # ]
 # ///
 """Fetch one SubX model's real-time ensemble forecast from CHC SubC as a weather-skills Zarr."""
@@ -32,6 +34,7 @@
 from __future__ import annotations
 
 import contextlib
+import os
 import sys
 import time as _time
 from concurrent.futures import ThreadPoolExecutor
@@ -52,6 +55,15 @@ DEFAULT_VARIABLE = "pr"
 _FTP_HOST = "ftp.chc.ucsb.edu"
 _FTP_TIMEOUT = 120
 _FTP_BLOCK = 2**20
+# Icechunk mirror of the forecasts (one repository per variable, one group per model,
+# built from the CHC files by the same conversion this skill applies). Read first;
+# the CHC FTP server is the fallback for inits and variables the mirror lacks.
+# SUBC_FORECAST_MIRROR overrides it (a gs:// prefix or a local folder; "none" disables).
+_MIRROR = "gs://africa-forecasting-data/chc-mirror/experimental/SubC/forecasts"
+_MIRROR_ENV = "SUBC_FORECAST_MIRROR"
+# Env vars holding a raw service-account key JSON (the runners' shared GCP key).
+_CREDENTIAL_ENVS = ("GCLOUD_SERVICE_CREDENTIALS", "NEURAL_GCM_SERVICE_CREDENTIALS")
+SOURCES = ("auto", "mirror", "chc")
 # Refused or dropped connections can persist for minutes; back off long.
 _RETRY_DELAYS = (15, 30, 60, 120, 240)
 # --probe-latest looks back through this many month folders.
@@ -284,16 +296,108 @@ def _list_inits(model: str, var: str, month: int) -> list[_date]:
     return sorted(found)
 
 
+# --- mirror ---------------------------------------------------------------------------
+
+
+def _mirror_root() -> str | None:
+    root = os.environ.get(_MIRROR_ENV, _MIRROR).strip().rstrip("/")
+    return None if root.lower() in ("", "none", "off") else root
+
+
+def _gcloud_token() -> str | None:
+    """Access token of the gcloud CLI's login, or None when gcloud is unavailable."""
+    import shutil
+    import subprocess
+
+    exe = shutil.which("gcloud")
+    if exe is None:
+        return None
+    try:
+        out = subprocess.run(
+            [exe, "auth", "print-access-token"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    token = out.stdout.strip()
+    return token if out.returncode == 0 and token else None
+
+
+def _gcs_credentials() -> dict:
+    """icechunk.gcs_storage credentials: key JSON env, credentials file, ADC, gcloud, anonymous."""
+    from pathlib import Path
+
+    for name in _CREDENTIAL_ENVS:
+        key = os.environ.get(name, "").strip()
+        if key:
+            return {"service_account_key": key}
+    path = os.environ.get("GOOGLE_APPLICATION_CREDENTIALS", "").strip()
+    if path:
+        return {"application_credentials": path}
+    config = Path(os.environ["APPDATA"]) if os.name == "nt" else Path.home() / ".config"
+    adc = config / "gcloud" / "application_default_credentials.json"
+    if adc.is_file():
+        return {"application_credentials": str(adc)}
+    token = _gcloud_token()
+    if token:
+        return {"bearer_token": token}
+    return {"anonymous": True}
+
+
+def _open_mirror(var: str):
+    """Read-only store of the mirror repository for ``var`` (raises if unreachable)."""
+    import icechunk
+
+    root = _mirror_root()
+    if root.startswith("gs://"):
+        bucket, _, prefix = root[len("gs://") :].partition("/")
+        storage = icechunk.gcs_storage(
+            bucket=bucket, prefix=f"{prefix}/{var}.icechunk".lstrip("/"), **_gcs_credentials()
+        )
+    else:
+        storage = icechunk.local_filesystem_storage(f"{root}/{var}.icechunk")
+    return icechunk.Repository.open(storage).readonly_session("main").store
+
+
+def _read_mirror(model: str, var: str, init: _date, bbox):
+    """(field, init value, level attrs) from the mirror, or None if it lacks this init."""
+    import numpy as np
+    import xarray as xr
+
+    ds = xr.open_zarr(_open_mirror(var), group=model, consolidated=False, chunks=None)
+    hit = np.flatnonzero(ds["time"].values.astype("datetime64[D]") == np.datetime64(init, "D"))
+    if hit.size == 0:
+        return None
+    da = ds[var].isel(time=int(hit[0]))
+    if bbox is not None:
+        lat_idx, lon_idx = _bbox_index(da["latitude"].values, da["longitude"].values, bbox)
+        da = da.isel(latitude=lat_idx, longitude=lon_idx)
+    init_value = da["time"].values
+    level_attrs = dict(ds["level"].attrs) if "level" in ds.coords else {}
+    da = da.drop_vars([c for c in ("time", "valid_time") if c in da.coords]).load()
+    da.attrs = {k: da.attrs[k] for k in ("units", "standard_name") if k in da.attrs}
+    return da.rename(var), init_value, level_attrs
+
+
 # --- reshaping ------------------------------------------------------------------------
 
 
 def _bbox_indexers(ds, bbox) -> dict:
     """Source Y/X integer indexers covering every cell that overlaps ``bbox``."""
+    lat_idx, lon_idx = _bbox_index(ds["Y"].values, ds["X"].values, bbox)
+    return {"Y": lat_idx, "X": lon_idx}
+
+
+def _bbox_index(lat_values, lon_values, bbox):
+    """Integer indices of the latitudes/longitudes of every cell that overlaps ``bbox``."""
     import numpy as np
 
     north, west, south, east = bbox
-    lat = np.asarray(ds["Y"].values, dtype="float64")
-    lon = (np.asarray(ds["X"].values, dtype="float64") + 180.0) % 360.0 - 180.0
+    lat = np.asarray(lat_values, dtype="float64")
+    lon = (np.asarray(lon_values, dtype="float64") + 180.0) % 360.0 - 180.0
     # Just under half a cell keeps cells overlapping the box but not those that only
     # touch it; the 1e-3 margin exceeds float32 coordinate resolution.
     pad = float(np.abs(np.diff(lat)).min()) / 2 - 1e-3 if lat.size > 1 else 0.0
@@ -303,7 +407,7 @@ def _bbox_indexers(ds, bbox) -> dict:
     lon_idx = np.flatnonzero(lon_mask)
     if lat_idx.size == 0 or lon_idx.size == 0:
         raise UsageError(f"--bbox {north}/{west}/{south}/{east} selects no grid cells")
-    return {"Y": lat_idx, "X": lon_idx}
+    return lat_idx, lon_idx
 
 
 def _lead_start_days(lead):
@@ -346,7 +450,35 @@ def _to_field(da, *, var: str):
     return da.rename(var)
 
 
-def _read_variable(model: str, var: str, init: _date, bbox):
+def _read_variable(model: str, var: str, init: _date, bbox, source: str = "auto"):
+    if source != "chc" and _mirror_root() is not None:
+        where = f"{_mirror_root()}/{var}.icechunk"
+        try:
+            got = _read_mirror(model, var, init, bbox)
+        except UsageError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — any mirror failure falls back to CHC
+            # Icechunk errors carry a multi-line context trace; the first line is the reason.
+            reason = _describe(exc).splitlines()[0]
+            if type(exc).__name__ == "RepositoryNotFoundError":
+                reason = f"{var} is not mirrored"
+            elif isinstance(exc, KeyError | FileNotFoundError) and "group" in str(exc).lower():
+                reason = f"{model} is not mirrored for {var}"
+            if source == "mirror":
+                raise DataError(f"cannot read the SubC mirror {where}: {reason}") from None
+            print(f"SubC mirror {where}: {reason}; reading the CHC FTP server.", file=sys.stderr)
+        else:
+            if got is not None:
+                print(f"{model} {var} {init}: read from the mirror {where}", file=sys.stderr)
+                return got
+            if source == "mirror":
+                raise DataError(f"{model} {var} init {init} is not on the SubC mirror {where}")
+            print(
+                f"{model} {var} {init} is not on the mirror yet; reading the CHC FTP server.",
+                file=sys.stderr,
+            )
+    elif source == "mirror":
+        raise UsageError(f"--source mirror, but {_MIRROR_ENV} disables the mirror")
     url = _file_url(model, var, init)
 
     def read():
@@ -433,6 +565,15 @@ def _resolve_vars(variable) -> list[str]:
     help="Concurrent file reads, one per variable (default 2; the server rate-limits).",
 )
 @weather_skill.argument(
+    "--source",
+    choices=list(SOURCES),
+    default="auto",
+    help=(
+        "Where to read: auto (the Icechunk mirror, then the CHC FTP server for inits or "
+        "variables it lacks), mirror (mirror only), chc (CHC FTP only). Default: auto."
+    ),
+)
+@weather_skill.argument(
     "--probe-latest",
     nargs="?",
     const=DEFAULT_VARIABLE,
@@ -443,7 +584,7 @@ def _resolve_vars(variable) -> list[str]:
         "stdout, or 'none', and exit. Does not download fields."
     ),
 )
-def fetch(date, model, variable, bbox, workers, probe_latest, **kwargs):
+def fetch(date, model, variable, bbox, workers, source, probe_latest, **kwargs):
     """Fetch one SubX model's real-time ensemble forecast from CHC SubC as a weather-skills Zarr.
 
     Every member at every daily lead (out to 32-45 days by model) for one init date, on
@@ -480,7 +621,7 @@ def fetch(date, model, variable, bbox, workers, probe_latest, **kwargs):
 
     def load(var):
         try:
-            return _read_variable(model, var, init, bbox)
+            return _read_variable(model, var, init, bbox, source)
         except DataError as exc:
             if str(exc).startswith(f"no {model} {var} forecast for init"):
                 raise DataError(str(exc) + "." + _nearest_inits(model, var, init)) from None
@@ -493,6 +634,25 @@ def fetch(date, model, variable, bbox, workers, probe_latest, **kwargs):
     ds = xr.merge(fields, join="outer", compat="override", combine_attrs="drop_conflicts")
     ds = ds.sortby("latitude")
     ds = ensure_normalized_longitude(ds, lon_dim="longitude")
+    # The same grid whichever source served it: SubX grids sit on a 0.5/1 degree lattice
+    # (GMAO-GEOS_V3's source equator is -2.9e-13), and IRIDL's coordinate attrs
+    # (`degree_north`, `pointwidth`, `gridtype`) are replaced by plain CF ones.
+    ds = ds.assign_coords(
+        latitude=np.round(ds["latitude"].values.astype("float64"), 4).astype("float32"),
+        longitude=np.round(ds["longitude"].values.astype("float64"), 4).astype("float32"),
+    )
+    ds["latitude"].attrs = {
+        "standard_name": "latitude",
+        "long_name": "latitude",
+        "units": "degrees_north",
+        "axis": "Y",
+    }
+    ds["longitude"].attrs = {
+        "standard_name": "longitude",
+        "long_name": "longitude",
+        "units": "degrees_east",
+        "axis": "X",
+    }
 
     init_value = next((v for _, v, _ in results if v is not None), None)
     init_time = (

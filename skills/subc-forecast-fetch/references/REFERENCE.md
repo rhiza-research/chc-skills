@@ -52,3 +52,18 @@ for several minutes.
   2026-11-09) into a temporary directory and opens them locally.
 - Reply codes: 550 = no such file/directory; 421 = too many connections (retried
   with backoff); other 4xx are temporary.
+
+## Icechunk mirror
+
+`gs://africa-forecasting-data/chc-mirror/experimental/SubC/forecasts/{var}.icechunk`
+(same path as CHC, `.icechunk` per variable). One group per model; each a forecast
+dataset `{var}(time, number, step, latitude, longitude)` plus `valid_time(time, step)`,
+in this skill's output conventions (`pr` mm day-1, latitude ascending, longitude
+-180..180, coordinates rounded to 4 decimals). Chunks `(1, all members, all leads,
+30°, 30°)`; one commit per init, so appends never rewrite stored chunks.
+
+Contents (2026-11-10): `pr` only, inits 2026-09-01 to 2026-11-09. GMAO-GEOS_V3's
+15-member end-of-month runs (09-28, 10-28) keep members 1-5, matching its regular
+5-member runs. Built with `convert_to_icechunk.py` from the CHC files; not yet
+refreshed automatically. Moving it to the public datalake
+(`sheerwater-public-datalake/chc-mirror/...`) needs write access there.
