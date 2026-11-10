@@ -28,7 +28,7 @@ from weather_skills_core.cf import stamp_cf_coords
 from weather_skills_core.units import stamp_data_interval
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "0.0.2"
+_SKILL_VERSION = "0.0.3"
 
 BOM = "https://www.bom.gov.au/clim_data"
 CPC = "https://www.cpc.ncep.noaa.gov/data/indices"
