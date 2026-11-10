@@ -11,23 +11,15 @@ Page: https://www.bom.gov.au/climate/enso/
 | `nino3.4` | `https://www.bom.gov.au/clim_data/IDCK000072/nino3_4.png` | `IDCK000072/nino_3.4.txt` |
 | `soi` | `https://www.bom.gov.au/clim_data/IDCKGSM000/soi30.png` | `IDCKGSM000/soi.txt` |
 
-Text rows are `week_start,week_end,value` (`YYYYMMDD`). SOI is a 30-day rolling window updated daily. The Zarr `time` is the `week_end` column.
+## NOAA CPC
 
-## NOAA CPC RONI
+Page: https://www.cpc.ncep.noaa.gov/data/indices/
 
-Page: https://www.cpc.ncep.noaa.gov/products/analysis_monitoring/ensostuff/ONI_v5.php
-
-Text series: `https://www.cpc.ncep.noaa.gov/data/indices/RONI.ascii.txt`
-
-Rows are `SEAS YR ANOM` after a header line, for example `DJF  1950 -1.19`. `DJF` of year Y covers Dec Y-1 to Feb Y. The Zarr `time` is the season's middle month.
-
-Monthly relative Niño3.4 (`--index cpc-relative-nino3.4-monthly`): `https://www.cpc.ncep.noaa.gov/data/indices/Rnino34.ascii.txt`
-
-Rows are `YR MTH ANOM` after a header line, for example `1949  12  -1.03`. ERSSTv5, unsmoothed; RONI is its 3-month running mean.
-
-Weekly relative Niño SSTs (`--index cpc-relative-nino3.4-weekly`): `https://www.cpc.ncep.noaa.gov/data/indices/rel_wksst9120.txt`
-
-After title and column-header lines, rows are `DDMONYYYY n12 n3 n34 n4` (Niño1+2, Niño3, Niño3.4, Niño4 relative anomalies), for example `04NOV2026  4.7  3.5  2.3  0.2`. The date is the week's centre; the skill keeps the Niño3.4 column.
+| `--index` | Text series |
+| --- | --- |
+| `roni` | `https://www.cpc.ncep.noaa.gov/data/indices/RONI.ascii.txt` |
+| `cpc-relative-nino3.4-monthly` | `https://www.cpc.ncep.noaa.gov/data/indices/Rnino34.ascii.txt` |
+| `cpc-relative-nino3.4-weekly` | `https://www.cpc.ncep.noaa.gov/data/indices/rel_wksst9120.txt` |
 
 ## ACCESS-S forecasts
 
@@ -47,4 +39,3 @@ https://www.bom.gov.au/climate/ocean/outlooks/archive/YYYYMMDD/plumes/sstOutlook
 | `relative-nino3.4` | `rnino34` (2025-07-01 onward) |
 | `nino3.4` | `nino34` |
 
-The JSON's `data.mean` gives the monthly ensemble mean keyed by `Mon YYYY`; `data.frequency` gives the percent of members below, neutral, and above the event threshold.
