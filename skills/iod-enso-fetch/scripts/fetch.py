@@ -7,7 +7,8 @@
 #   "xarray",
 # ]
 # ///
-"""Download Bureau of Meteorology IOD and ENSO graphs, index values, or ACCESS-S outlooks."""
+"""Download Bureau of Meteorology IOD and ENSO graphs, index values, or ACCESS-S outlooks,
+and NOAA CPC's Relative Oceanic Niño Index (RONI)."""
 
 from __future__ import annotations
 
@@ -35,6 +36,10 @@ FORECAST_PAGE = "https://www.bom.gov.au/climate/ocean/outlooks/?index=iod#tabs=G
 FORECAST_ARCHIVE = "https://www.bom.gov.au/climate/ocean/outlooks/archive"
 ARCHIVE_INDEX_URL = f"{FORECAST_ARCHIVE}/archive_index.json"
 _HTTP_TIMEOUT = 60
+
+# NOAA CPC RONI: 3-month running seasons (DJF ... NDJ) from 1950, one text file.
+RONI_URL = "https://www.cpc.ncep.noaa.gov/data/indices/RONI.ascii.txt"
+RONI_SEASONS = ("DJF", "JFM", "FMA", "MAM", "AMJ", "MJJ", "JJA", "JAS", "ASO", "SON", "OND", "NDJ")
 
 # BoM switches Niño outlook plumes to Relative Niño filenames on this issue date.
 RNINO_START = date(2025, 7, 1)
@@ -96,7 +101,7 @@ INDEX_VARS: dict[str, tuple[str, str, str]] = {
     "soi": ("soi", "1", "30-day Troup Southern Oscillation Index"),
 }
 
-INDEX_CHOICES = tuple(INDEX_FILES)
+INDEX_CHOICES = (*INDEX_FILES, "roni")
 PRODUCT_CHOICES = ("observation", "forecast")
 FORMAT_CHOICES = ("figure", "data")
 _FIGURE_SUFFIXES = {".png", ".jpg", ".jpeg"}
@@ -128,6 +133,8 @@ def _image_url(index: str) -> str:
 
 
 def _obs_data_url(index: str) -> str:
+    if index == "roni":
+        return RONI_URL
     if index not in INDEX_DATA_FILES:
         raise UsageError(f"unknown --index {index!r}; choose one of: {', '.join(INDEX_CHOICES)}")
     product, filename = INDEX_DATA_FILES[index]
@@ -328,6 +335,50 @@ def _obs_dataset(index: str, text: str) -> xr.Dataset:
     return stamp_data_interval(ds, period=_obs_interval(index))
 
 
+def _month_start(months: int) -> np.datetime64:
+    """First of the month ``months`` counted as ``year * 12 + month - 1``."""
+    return np.datetime64(f"{months // 12:04d}-{months % 12 + 1:02d}-01", "ns")
+
+
+def _roni_dataset(text: str) -> xr.Dataset:
+    """Parse CPC ``SEAS YR ANOM`` rows; time is each season's middle month."""
+    if text.lstrip().startswith("<"):
+        raise DataError("NOAA RONI download returned HTML, not the text table.")
+    times, bounds, values = [], [], []
+    for line_no, line in enumerate(text.splitlines(), start=1):
+        parts = line.split()
+        if not parts or parts[0] == "SEAS":
+            continue
+        if len(parts) != 3 or parts[0] not in RONI_SEASONS:
+            raise DataError(f"NOAA RONI line {line_no} is not 'SEAS YR ANOM': {line!r}")
+        # DJF of year Y is Dec Y-1 to Feb Y, so its middle month is Jan Y.
+        mid = int(parts[1]) * 12 + RONI_SEASONS.index(parts[0])
+        value = _parse_float(parts[2])
+        times.append(_month_start(mid))
+        bounds.append([_month_start(mid - 1), _month_start(mid + 2)])
+        values.append(np.nan if value <= -99 else value)  # CPC marks missing as -99.9
+    if not times:
+        raise DataError("NOAA RONI text listed no values.")
+    ds = xr.Dataset(
+        {"roni": ("time", np.asarray(values, dtype=np.float64))},
+        coords={
+            "time": np.asarray(times),
+            "time_bounds": (("time", "nv"), np.asarray(bounds, dtype="datetime64[ns]")),
+        },
+    )
+    ds["roni"].attrs.update(
+        long_name="Relative Oceanic Niño Index (3-month running relative Niño3.4 anomaly)",
+        standard_name="sea_surface_temperature_anomaly",
+        units="degree_Celsius",
+        comment="Overlapping 3-month seasons; time is the middle month, time_bounds the season.",
+    )
+    stamp_cf_coords(ds)
+    ds["time"].attrs["bounds"] = "time_bounds"
+    ds.attrs.update(Conventions="CF-1.13", weather_skills_source="noaa-cpc")
+    # Seasons overlap, so no scalar data_interval; time_bounds describe each value.
+    return ds
+
+
 def _parse_month_label(label: str) -> date:
     try:
         return datetime.strptime(label.strip(), "%b %Y").replace(tzinfo=UTC).date().replace(day=1)
@@ -465,7 +516,8 @@ def _resolve_output_format(output_format: str | None, output) -> str:
     help=(
         "Index: iod (weekly DMI), enso / relative-nino3.4 "
         "(operational Relative Niño3.4), nino3.4 (traditional), or soi "
-        "(30-day SOI; observation only)."
+        "(30-day SOI; observation only), or roni (NOAA CPC 3-month Relative "
+        "Oceanic Niño Index from 1950; Zarr data only)."
     ),
 )
 @weather_skill.argument(
@@ -518,6 +570,18 @@ def fetch(index, product, date, output, output_format, probe_latest, **kwargs):
         )
 
     kind = _resolve_output_format(output_format, output)
+    if index == "roni":
+        # NOAA publishes RONI as a text table only: no graph, no forecast.
+        if (
+            product == "forecast"
+            or output_format == "figure"
+            or (output is not None and Path(output).suffix.lower() != ".zarr")
+        ):
+            raise UsageError(
+                "--index roni is NOAA observation data only; "
+                "pass --product observation and -o OUT.zarr."
+            )
+        kind = "data"
 
     if probe_latest is not None:
         if probe_latest:
@@ -558,6 +622,8 @@ def fetch(index, product, date, output, output_format, probe_latest, **kwargs):
                     f"downloaded {url!r} is not UTF-8 text "
                     f"(content-type={content_type!r}, size={len(text)})."
                 ) from exc
+            if index == "roni":
+                return _roni_dataset(decoded)
             return _obs_dataset(index, decoded)
     else:
         issue = _resolve_issue_date(date, _archive_dates())

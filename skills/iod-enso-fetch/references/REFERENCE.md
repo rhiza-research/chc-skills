@@ -13,6 +13,14 @@ Page: https://www.bom.gov.au/climate/enso/
 
 Text rows are `week_start,week_end,value` (`YYYYMMDD`). SOI is a 30-day rolling window updated daily. The Zarr `time` is the `week_end` column.
 
+## NOAA CPC RONI
+
+Page: https://www.cpc.ncep.noaa.gov/products/analysis_monitoring/ensostuff/ONI_v5.php
+
+Text series: `https://www.cpc.ncep.noaa.gov/data/indices/RONI.ascii.txt`
+
+Rows are `SEAS YR ANOM` after a header line, for example `DJF  1950 -1.19`. `DJF` of year Y covers Dec Y-1 to Feb Y. The Zarr `time` is the season's middle month.
+
 ## ACCESS-S forecasts
 
 Page: https://www.bom.gov.au/climate/ocean/outlooks/?index=iod#tabs=Graphs

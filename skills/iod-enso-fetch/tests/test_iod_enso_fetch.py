@@ -295,6 +295,7 @@ def test_all_page_indices_registered(mod):
         "nino3.4",
         "relative-nino3.4",
         "soi",
+        "roni",
     }
     assert set(mod.INDEX_DATA_FILES) == set(mod.INDEX_FILES)
 
@@ -455,3 +456,61 @@ def test_fetch_forecast_data_zarr(mod, monkeypatch, tmp_path):
     assert seen["url"].endswith("/archive/20260829/plumes/sstOutlooks.iod.json")
     assert float(ds["iod_mode_index"].isel(time=0)) == pytest.approx(0.6)
     assert float(ds["prob_above"].isel(time=0)) == pytest.approx(95.0)
+
+
+RONI_SAMPLE = "SEAS   YR  ANOM\nDJF  1950 -1.19\nNDJ  1950 -99.90\nDJF  1951 -0.80\n"
+
+
+def test_roni_dataset(mod):
+    ds = mod._roni_dataset(RONI_SAMPLE)
+    assert list(ds["time"].values) == [
+        np.datetime64("1950-01-01", "ns"),
+        np.datetime64("1950-12-01", "ns"),
+        np.datetime64("1951-01-01", "ns"),
+    ]
+    assert list(ds["time_bounds"].values[0]) == [
+        np.datetime64("1949-12-01", "ns"),
+        np.datetime64("1950-03-01", "ns"),
+    ]
+    assert ds["time_bounds"].values[1, 1] == np.datetime64("1951-02-01", "ns")
+    assert float(ds["roni"][0]) == pytest.approx(-1.19)
+    assert np.isnan(ds["roni"][1])
+    assert ds["roni"].attrs["units"] == "degree_Celsius"
+    assert "data_interval" not in ds["roni"].attrs
+
+
+def test_roni_dataset_rejects_bad_rows(mod):
+    with pytest.raises(DataError, match="HTML"):
+        mod._roni_dataset("<html>")
+    with pytest.raises(DataError, match="line 2"):
+        mod._roni_dataset("SEAS YR ANOM\nXYZ 1950 0.1\n")
+
+
+def test_fetch_roni_zarr(mod, monkeypatch, tmp_path):
+    out = tmp_path / "roni.zarr"
+    seen = {}
+
+    def fake_read(url, *, referer=None, accept=None):
+        seen["url"] = url
+        return RONI_SAMPLE.encode(), "text/plain"
+
+    monkeypatch.setattr(mod, "_read_url", fake_read)
+    run_skill(mod.fetch, "--index", "roni", "-o", str(out))
+    ds = xr.open_zarr(out, consolidated=True)
+    assert seen["url"] == mod.RONI_URL
+    assert ds.sizes["time"] == 3
+
+
+@pytest.mark.parametrize(
+    "extra",
+    [
+        ["--product", "forecast", "-o", "x.zarr"],
+        ["-o", "x.png"],
+        ["--format", "figure", "-o", "x.zarr"],
+    ],
+)
+def test_roni_rejects_figure_and_forecast(mod, tmp_path, monkeypatch, extra):
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(SystemExit) as exc:
+        run_skill(mod.fetch, "--index", "roni", *extra)
+    assert exc.value.code == 2
