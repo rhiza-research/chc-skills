@@ -444,7 +444,7 @@ def _cpc_weekly_dataset(text: str) -> xr.Dataset:
         if len(parts) != 5:
             continue  # title and column-header lines
         try:
-            week = datetime.strptime(parts[0], "%d%b%Y").date()
+            week = datetime.strptime(parts[0], "%d%b%Y").replace(tzinfo=UTC).date()
         except ValueError:
             continue
         times.append(np.datetime64(week.isoformat(), "ns"))
