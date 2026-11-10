@@ -11,16 +11,7 @@ metadata:
     policy: none
     lag_days: 1
     note: KMSA WRF runs from August 2023, mirrored daily from the KMSA NWP workstation; some runs are missing or truncated
-  openclaw:
-    requires:
-      env:
-        - GCLOUD_SERVICE_CREDENTIALS
-    primaryEnv: GCLOUD_SERVICE_CREDENTIALS
-    envVars:
-      - name: GCLOUD_SERVICE_CREDENTIALS
-        description: Full contents of a GCP service-account key JSON with read access to gs://sheerwater-datalake/kmsa-wrf.
-      - name: GOOGLE_APPLICATION_CREDENTIALS
-        description: Path to a GCP service-account JSON file with that access. Used only if GCLOUD_SERVICE_CREDENTIALS is unset.
+  required-env: "GCLOUD_SERVICE_CREDENTIALS"
 ---
 
 # kmsa-wrf-fetch

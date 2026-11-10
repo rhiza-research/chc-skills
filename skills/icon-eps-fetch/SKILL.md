@@ -6,16 +6,7 @@ compatibility: Requires Python 3.12 and uv. Requires the eccodes library for cfg
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py *)
 metadata:
   catalog-group: fetchers
-  variables:
-    - tp
-    - t2m
-    - d2m
-    - r2
-    - u10
-    - v10
-    - fg10
-    - tcc
-    - sp
+  variables: "tp t2m d2m r2 u10 v10 fg10 tcc sp"
 ---
 
 # icon-eps-fetch
