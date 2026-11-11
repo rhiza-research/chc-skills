@@ -25,8 +25,9 @@ weather-skills transforms and plotters when those are available (for example
 ## CHC-specific notes
 
 - **`subc-mme-fetch`** pulls one CHC SubC MME outlook (`--outlook 7d|15d|30d`)
-  from the public GCS mirror (`gs://sheerwater-public-datalake/chc-mirror`),
-  falling back to the CHC origin if a file is missing. For the latest published
+  from the public GCS mirror (`gs://sheerwater-public-datalake/chc-mirror`,
+  last updated 2026-09-16), falling back to the CHC FTP server for later
+  issues (daily, about 25 s per variable). For the latest published
   init, run it with `--outlook` and `--probe-latest VAR` (one variable, e.g.
   `pr` or `ts`; stdout is `YYYY-MM-DD`) and pass that as `--date`. Do not use
   `resolve-time latest` or today's calendar date — the archive lags, and a

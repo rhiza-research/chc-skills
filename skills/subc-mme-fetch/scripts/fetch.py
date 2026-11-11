@@ -14,9 +14,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 import sys
+import time as _time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -39,10 +41,19 @@ _MIRROR_PREFIX = "chc-mirror/experimental/SubC"
 _GCS_API = f"https://storage.googleapis.com/storage/v1/b/{_BUCKET}/o"
 _GCS_MEDIA = f"https://storage.googleapis.com/{_BUCKET}"
 SUBC_BASE = f"{_GCS_MEDIA}/{_MIRROR_PREFIX}"
-CHC_BASE = "https://data.chc.ucsb.edu/experimental/SubC"
-_USER_AGENT = "weather-skills/subc-mme-fetch"
+# CHC origin. CHC asks download scripts to use its FTP server rather than HTTPS, and
+# since mid-September 2026 it keeps each issue in its own date folder
+# (archive/YYYYMMDD/mme_mean_pr_7d_YYYYMMDD.nc); the mirror keeps the older flat layout.
+CHC_BASE = "ftp://ftp.chc.ucsb.edu/experimental/SubC"
 DEFAULT_WORKERS = 4
 _HTTP_TIMEOUT = 60
+_FTP_HOST = "ftp.chc.ucsb.edu"
+_FTP_TIMEOUT = 120
+_FTP_BLOCK = 2**20
+# Refused or dropped connections can persist for minutes; back off long.
+_RETRY_DELAYS = (15, 30, 60, 120, 240)
+# --probe-latest checks at most this many of the newest CHC date folders for the files.
+_PROBE_CANDIDATES = 10
 
 # Outlook id → (lead folder on server, filename lead tag, lead days).
 OUTLOOKS: dict[str, tuple[str, str, int]] = {
@@ -97,35 +108,194 @@ def _archive_list_prefix(folder: str, lead_tag: str, var: str) -> str:
     return f"{_MIRROR_PREFIX}/{folder}/global/archive/mme_mean_{var}_{lead_tag}_"
 
 
+def _chc_url(mirror_url: str) -> str | None:
+    """The CHC FTP URL of a mirror URL: the same file inside its issue-date folder."""
+    if not mirror_url.startswith(SUBC_BASE):
+        return None
+    rel = mirror_url[len(SUBC_BASE) :]
+    head, _, name = rel.rpartition("/")
+    stamp = re.search(r"_(\d{8})\.nc$", name)
+    if stamp is None:
+        return None
+    return f"{CHC_BASE}{head}/{stamp.group(1)}/{name}"
+
+
 def _candidate_urls(url: str) -> list[str]:
-    """GCS mirror first; CHC origin if the URL is on the mirror prefix."""
+    """GCS mirror first; then the CHC FTP origin if the URL is on the mirror prefix."""
     urls = [url]
-    if url.startswith(SUBC_BASE):
-        urls.append(CHC_BASE + url[len(SUBC_BASE) :])
+    chc = _chc_url(url)
+    if chc is not None:
+        urls.append(chc)
     return urls
 
 
-def _open_remote(url: str) -> xr.Dataset:
-    """Open a SubC NetCDF. GCS mirror first, then CHC origin.
+# --- CHC FTP transport ----------------------------------------------------------------
 
-    Uses fsspec ``simplecache`` so netCDF4 opens a local materialized copy.
-    """
+
+class _FTPError(Exception):
+    """An FTP error reply, mapped onto the HTTP-style ``status`` the retry rules use."""
+
+    def __init__(self, reply: str):
+        super().__init__(reply)
+        code = int(reply[:3]) if reply[:3].isdigit() else 0
+        self.ftp_code = code
+        if code == 550:
+            self.status = 404  # no such file or directory
+        elif code == 421:
+            self.status = 429  # too many connections from this address
+        elif 400 <= code < 500:
+            self.status = 503  # temporary failure
+        else:
+            self.status = 400  # permanent failure
+
+
+def _exc_chain(exc: BaseException | None):
+    """``exc`` and its causes, outermost first."""
+    seen = set()
+    while exc is not None and id(exc) not in seen:
+        seen.add(id(exc))
+        yield exc
+        exc = exc.__cause__ or exc.__context__
+
+
+def _http_status(exc: BaseException) -> int | None:
+    """HTTP-style status carried anywhere on an exception chain."""
+    for err in _exc_chain(exc):
+        status = getattr(err, "status", None)
+        if isinstance(status, int):
+            return status
+    return None
+
+
+def _describe(exc: BaseException) -> str:
+    """The innermost cause as ``Type: message``."""
+    root = list(_exc_chain(exc))[-1]
+    return f"{type(root).__name__}: {root}" if str(root) else type(root).__name__
+
+
+def _is_transient(exc: BaseException) -> bool:
+    status = _http_status(exc)
+    if status is not None:
+        return status == 429 or status >= 500
+    for err in _exc_chain(exc):
+        text = f"{type(err).__name__} {err}".lower()
+        if isinstance(err, (TimeoutError, ConnectionError, EOFError)) or any(
+            marker in text
+            for marker in ("timeout", "timed out", "connection reset", "disconnect", "refused")
+        ):
+            return True
+    return False
+
+
+def _ftp_path(url: str) -> str:
+    return urllib.parse.urlparse(url).path
+
+
+@contextlib.contextmanager
+def _ftp():
+    """An anonymous passive-mode session on the CHC FTP server."""
+    import ftplib
+
+    try:
+        ftp = ftplib.FTP(_FTP_HOST, timeout=_FTP_TIMEOUT)
+        ftp.login()
+        ftp.set_pasv(True)
+    except ftplib.Error as exc:
+        raise _FTPError(str(exc)) from exc
+    try:
+        yield ftp
+    except ftplib.Error as exc:
+        raise _FTPError(str(exc)) from exc
+    finally:
+        with contextlib.suppress(OSError, EOFError, ftplib.Error):
+            ftp.quit()
+        ftp.close()
+
+
+def _download(url: str, dest) -> None:
+    with _ftp() as ftp, open(dest, "wb") as fh:
+        ftp.retrbinary(f"RETR {_ftp_path(url)}", fh.write, blocksize=_FTP_BLOCK)
+
+
+def _ftp_list(url: str) -> list[str]:
+    """Entry names in one FTP directory."""
+    with _ftp() as ftp:
+        return [name.rsplit("/", 1)[-1] for name in ftp.nlst(_ftp_path(url))]
+
+
+def _with_retry(fn, url: str):
+    """Run ``fn()``, retrying 421/4xx/network failures. A missing file raises FileNotFoundError."""
+    for attempt in range(len(_RETRY_DELAYS) + 1):
+        try:
+            return fn()
+        except DataError:
+            raise
+        except Exception as exc:  # noqa: BLE001 — every FTP/NetCDF failure is classified below
+            status = _http_status(exc)
+            if status == 404:
+                raise FileNotFoundError(url) from None
+            if not _is_transient(exc) or attempt == len(_RETRY_DELAYS):
+                if status == 429:
+                    raise DataError(
+                        "ftp.chc.ucsb.edu is refusing more connections (FTP 421) and did "
+                        "not recover after retrying; wait several minutes and rerun with "
+                        "--workers 1."
+                    ) from None
+                kind = "unreachable" if _is_transient(exc) else "unreadable"
+                raise DataError(f"CHC SubC {kind}: {url}: {_describe(exc)}") from None
+            delay = _RETRY_DELAYS[attempt]
+            print(
+                f"{_describe(exc)} from ftp.chc.ucsb.edu; retrying in {delay} s ...",
+                file=sys.stderr,
+            )
+            _time.sleep(delay)
+    raise AssertionError("unreachable")
+
+
+def _open_chc(url: str) -> xr.Dataset:
+    """Download one CHC NetCDF over FTP and return it loaded in memory."""
+    import tempfile
+    from pathlib import Path
+
+    def fetch_and_load():
+        with tempfile.TemporaryDirectory(prefix="subc-mme-") as tmp:
+            path = Path(tmp) / url.rsplit("/", 1)[-1]
+            _download(url, path)
+            with xr.open_dataset(path, engine="netcdf4") as ds:
+                return ds.load()
+
+    return _with_retry(fetch_and_load, url)
+
+
+def _open_mirror(url: str) -> xr.Dataset:
+    """Open one mirror object (fsspec ``simplecache`` gives netCDF4 a local copy)."""
     import fsspec
 
-    last_missing: Exception | None = None
-    for i, candidate in enumerate(_candidate_urls(url)):
-        opts: dict = {}
-        if i:
-            opts["https"] = {"client_kwargs": {"headers": {"User-Agent": _USER_AGENT}}}
-        try:
-            path = fsspec.open_local(f"simplecache::{candidate}", **opts)
-            return xr.open_dataset(path, engine="netcdf4")
-        except FileNotFoundError as exc:
-            last_missing = exc
-            continue
-        except Exception as exc:
-            raise DataError(f"failed to open {candidate}: {exc}") from exc
-    raise DataError(f"SubC archive file not found: {url}") from last_missing
+    path = fsspec.open_local(f"simplecache::{url}")
+    return xr.open_dataset(path, engine="netcdf4")
+
+
+def _open_remote(url: str) -> xr.Dataset:
+    """Open a SubC NetCDF: the public GCS mirror first, then the CHC FTP server."""
+    candidates = _candidate_urls(url)
+    try:
+        return _open_mirror(candidates[0])
+    except FileNotFoundError:
+        pass  # not mirrored (the mirror stopped updating on 2026-09-16): read CHC
+    except Exception as exc:  # any mirror failure falls back to CHC
+        if len(candidates) == 1:
+            raise DataError(f"failed to open {url}: {_describe(exc)}") from exc
+        print(f"SubC mirror unreadable ({_describe(exc)}); reading CHC.", file=sys.stderr)
+    if len(candidates) == 1:
+        raise DataError(f"SubC archive file not found: {url}")
+    chc = candidates[1]
+    try:
+        return _open_chc(chc)
+    except FileNotFoundError:
+        raise DataError(
+            f"SubC archive file not found on the mirror or on CHC: {chc} (CHC publishes "
+            "each issue one to three days after its date; tdps is no longer published)"
+        ) from None
 
 
 def _normalize_field(ds: xr.Dataset, *, kind: str, var: str) -> xr.DataArray:
@@ -179,17 +349,53 @@ def _list_init_dates(folder: str, lead_tag: str, var: str) -> list[date]:
     return sorted(found)
 
 
+def _chc_init_dates(folder: str) -> set[date]:
+    """Issue dates on the CHC FTP server: the YYYYMMDD folders under the outlook's archive."""
+    url = f"{CHC_BASE}/{folder}/global/archive/"
+    found: set[date] = set()
+    for name in _with_retry(lambda: _ftp_list(url), url):
+        if re.fullmatch(r"\d{8}", name):
+            with contextlib.suppress(ValueError):
+                found.add(date(int(name[:4]), int(name[4:6]), int(name[6:8])))
+    return found
+
+
+def _chc_has(folder: str, lead_tag: str, variables: list[str], init: date) -> bool:
+    """True when CHC's folder for ``init`` holds the mean and anomaly of every variable."""
+    stamp = init.strftime("%Y%m%d")
+    url = f"{CHC_BASE}/{folder}/global/archive/{stamp}/"
+    try:
+        names = set(_with_retry(lambda: _ftp_list(url), url))
+    except FileNotFoundError:
+        return False
+    return all(
+        f"mme_{kind}_{var}_{lead_tag}_{stamp}.nc" in names
+        for var in variables
+        for kind in (KIND_MEAN, KIND_ANOM)
+    )
+
+
 def _probe_latest(outlook: str, variables: list[str]) -> date | None:
-    """Latest init present for every requested variable under one outlook."""
+    """Latest init present for every requested variable, on the mirror or on CHC."""
     folder, lead_tag, _days = OUTLOOKS[outlook]
-    per_var: list[set[date]] = []
-    for var in variables:
-        dates = set(_list_init_dates(folder, lead_tag, var))
-        if not dates:
-            return None
-        per_var.append(dates)
-    common = set.intersection(*per_var) if per_var else set()
-    return max(common) if common else None
+    try:
+        per_var = [set(_list_init_dates(folder, lead_tag, var)) for var in variables]
+        mirrored = set.intersection(*per_var) if per_var else set()
+    except DataError as exc:
+        print(f"SubC mirror listing failed ({exc}); checking CHC only.", file=sys.stderr)
+        mirrored = set()
+    try:
+        on_chc = _chc_init_dates(folder)
+    except (DataError, FileNotFoundError) as exc:
+        print(f"CHC listing failed ({exc}); using the mirror only.", file=sys.stderr)
+        on_chc = set()
+    newer = sorted(
+        (d for d in on_chc - mirrored if not mirrored or d > max(mirrored)), reverse=True
+    )
+    for init in newer[:_PROBE_CANDIDATES]:
+        if _chc_has(folder, lead_tag, variables, init):
+            return init
+    return max(mirrored) if mirrored else None
 
 
 def _resolve_vars(variable) -> list[str]:

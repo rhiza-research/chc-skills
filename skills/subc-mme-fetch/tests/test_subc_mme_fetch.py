@@ -39,8 +39,17 @@ def _fake_nc(*, kind: str, var: str, fill: float, window_days: int) -> xr.Datase
 
 
 @pytest.fixture
-def mod():
-    return load_skill("subc-mme-fetch", "fetch")
+def mod(monkeypatch):
+    m = load_skill("subc-mme-fetch", "fetch")
+
+    def no_network(*args, **kwargs):
+        raise AssertionError("CHC FTP contacted in a test")
+
+    # Offline by default: CHC FTP calls fail loudly unless a test stubs them.
+    monkeypatch.setattr(m, "_ftp_list", no_network)
+    monkeypatch.setattr(m, "_download", no_network)
+    monkeypatch.setattr(m, "_chc_init_dates", lambda folder: set())
+    return m
 
 
 def test_url_builder(mod):
@@ -51,9 +60,10 @@ def test_url_builder(mod):
     )
     candidates = mod._candidate_urls(url)
     assert candidates[0] == url
+    # CHC keeps each issue in its own date folder, over FTP.
     assert candidates[1] == (
-        "https://data.chc.ucsb.edu/experimental/SubC"
-        "/07_day/global/archive/mme_mean_ts_7d_20251201.nc"
+        "ftp://ftp.chc.ucsb.edu/experimental/SubC"
+        "/07_day/global/archive/20251201/mme_mean_ts_7d_20251201.nc"
     )
 
 
@@ -261,3 +271,101 @@ def test_list_init_dates_paginates(mod, monkeypatch):
     dates = mod._list_init_dates("07_day", "7d", "pr")
     assert dates == [date(2025, 12, 1), date(2025, 12, 8)]
     assert len(calls) == 2
+
+
+def test_unmirrored_issue_is_read_from_chc(mod, monkeypatch):
+    url = mod._url("07_day", "mean", "pr", "7d", date(2026, 11, 4))
+    fetched = []
+
+    def no_mirror(u):
+        raise FileNotFoundError(u)
+
+    def fake_chc(u):
+        fetched.append(u)
+        return _fake_nc(kind="mean", var="pr", fill=3.0, window_days=7)
+
+    monkeypatch.setattr(mod, "_open_mirror", no_mirror)
+    monkeypatch.setattr(mod, "_open_chc", fake_chc)
+    ds = mod._open_remote(url)
+    assert fetched == [
+        (
+            "ftp://ftp.chc.ucsb.edu/experimental/SubC/07_day/global/archive/20261104/"
+            "mme_mean_pr_7d_20261104.nc"
+        )
+    ]
+    assert float(ds["mme_mean"].mean()) == pytest.approx(3.0)
+
+
+def test_unreadable_mirror_falls_back_to_chc(mod, monkeypatch, capsys):
+    url = mod._url("07_day", "mean", "pr", "7d", date(2026, 9, 10))
+
+    def broken(u):
+        raise OSError("connection reset")
+
+    monkeypatch.setattr(mod, "_open_mirror", broken)
+    monkeypatch.setattr(
+        mod, "_open_chc", lambda u: _fake_nc(kind="mean", var="pr", fill=1.0, window_days=7)
+    )
+    mod._open_remote(url)
+    assert "SubC mirror unreadable" in capsys.readouterr().err
+
+
+def test_missing_everywhere_names_the_chc_path(mod, monkeypatch):
+    from weather_skills_core import DataError
+
+    url = mod._url("07_day", "mean", "tdps", "7d", date(2026, 11, 4))
+
+    def missing(u):
+        raise FileNotFoundError(u)
+
+    monkeypatch.setattr(mod, "_open_mirror", missing)
+    monkeypatch.setattr(
+        mod,
+        "_download",
+        lambda u, dest: (_ for _ in ()).throw(mod._FTPError("550 No such file or directory")),
+    )
+    with pytest.raises(DataError, match="20261104/mme_mean_tdps_7d_20261104.nc"):
+        mod._open_remote(url)
+
+
+def test_ftp_reply_codes_map_to_retry_rules(mod):
+    assert mod._http_status(mod._FTPError("550 Not found")) == 404
+    assert mod._is_transient(mod._FTPError("421 Too many connections"))
+    assert mod._is_transient(mod._FTPError("425 Can't open data connection"))
+    assert not mod._is_transient(mod._FTPError("530 Login incorrect"))
+
+
+def test_chc_init_dates_parses_date_folders(mod, monkeypatch):
+    monkeypatch.undo()
+    m = load_skill("subc-mme-fetch", "fetch")
+    monkeypatch.setattr(
+        m, "_ftp_list", lambda url: ["20261109", "20261110", "notes.txt", "20261399"]
+    )
+    assert m._chc_init_dates("07_day") == {date(2026, 11, 9), date(2026, 11, 10)}
+
+
+def test_probe_latest_prefers_newer_chc_issue(mod, monkeypatch, capsys):
+    monkeypatch.setattr(mod, "_list_init_dates", lambda f, t, v: [date(2026, 9, 16)])
+    monkeypatch.setattr(
+        mod, "_chc_init_dates", lambda f: {date(2026, 9, 16), date(2026, 11, 9), date(2026, 11, 10)}
+    )
+    listed = {
+        "20261110": ["mme_mean_pr_7d_20261110.nc"],  # anomaly not written yet
+        "20261109": ["mme_mean_pr_7d_20261109.nc", "mme_anom_pr_7d_20261109.nc"],
+    }
+    monkeypatch.setattr(mod, "_ftp_list", lambda url: listed[url.rstrip("/").rsplit("/", 1)[-1]])
+    run_skill(mod.fetch, "--outlook", "7d", "--probe-latest", "pr")
+    assert capsys.readouterr().out.strip() == "2026-11-09"
+
+
+def test_probe_latest_survives_a_failed_mirror_listing(mod, monkeypatch, capsys):
+    from weather_skills_core import DataError
+
+    def broken(f, t, v):
+        raise DataError("GCS listing failed")
+
+    monkeypatch.setattr(mod, "_list_init_dates", broken)
+    monkeypatch.setattr(mod, "_chc_init_dates", lambda f: {date(2026, 11, 10)})
+    monkeypatch.setattr(mod, "_chc_has", lambda f, t, v, d: True)
+    run_skill(mod.fetch, "--outlook", "7d", "--probe-latest", "pr")
+    assert capsys.readouterr().out.strip() == "2026-11-10"

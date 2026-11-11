@@ -2,7 +2,7 @@
 name: subc-mme-fetch
 description: "Fetch one CHC SubC multi-model-ensemble outlook (7-, 15-, or 30-day) for an init date as a weather-skills forecast Zarr: the ensemble mean and anomaly of precipitation, near-surface air, max, min, dewpoint, or surface temperature on a global 1° grid, optionally cut to a bbox. Use when a task needs a CHC SubC outlook map or its anomalies for one window."
 license: MIT
-compatibility: Requires Python 3.12 and uv. Fetches the public GCS mirror first (gs://sheerwater-public-datalake/chc-mirror), then falls back to data.chc.ucsb.edu. No credentials required.
+compatibility: Requires Python 3.12 and uv. Fetches the public GCS mirror first (gs://sheerwater-public-datalake/chc-mirror), then falls back to the CHC FTP server (ftp.chc.ucsb.edu) for issues the mirror lacks. No credentials required.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py *)
 metadata:
   catalog-group: fetchers
@@ -30,7 +30,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --outlook 7d|15d|30d --probe-latest 
 - `--bbox` — `N/W/S/E`. Keeps every 1° cell that overlaps the box, including cells whose centre is just outside. Default: global.
 - `--variable`, `-v` — `pr` (precipitation), `tas` (near-surface air temperature), `tasmax`, `tasmin`, `tdps` (dewpoint), `ts` (surface temperature); repeat for several. Default: all six.
 - `--workers` — concurrent downloads, at least 1. Default: 4.
-- `--probe-latest` — print the latest init for this `--outlook` (or `none`) and exit, no `-o`. With `VAR`, checks that variable only; without, the latest init common to all six (slower). stderr gives the init's age and warns when its window has already ended.
+- `--probe-latest` — print the latest init for this `--outlook` (or `none`) and exit, no `-o`. Checks the mirror and CHC. With `VAR`, checks that variable only; without, the latest init common to all six (slower). stderr gives the init's age and warns when its window has already ended.
 - `--output`, `-o` — output Zarr.
 
 ### Output
@@ -41,6 +41,8 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --outlook 7d|15d|30d --probe-latest 
 
 ### Notes
 - SubC publishes irregularly: the latest init can be weeks old with its window already over. Probe first and check the window covers the period you need.
+- The public mirror stopped updating on 2026-09-16; later issues come from the CHC FTP server (about 25 s for one variable, against a few seconds from the mirror). CHC writes each issue one to three days after its date.
+- CHC no longer publishes `tdps` in recent issues; asking for it there fails with "not found on the mirror or on CHC".
 - `pr` is already a total; do not convert it to totals again.
 - To mask to a country or basin, clip with its polygon after fetching.
 
