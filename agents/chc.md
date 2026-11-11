@@ -54,7 +54,15 @@ weather-skills transforms and plotters when those are available (for example
   guessing; a missing init fails and lists that month's inits. Use `--bbox` —
   it reads the tiled Icechunk mirror first (only the tiles the box
   touches) and CHC's FTP server for inits or variables the mirror lacks (`pr`
-  from 2026-09-01 is mirrored). `pr` is a
+  from 2026-09-01 is mirrored). For `pr` alone over Africa (a `--bbox` inside
+  CHC's EA, WA or SA region) on CFSv2, GEFSv12, GEOS_V3 or CCSM4, it uses
+  CHC's bias-corrected forecast (CHIRPS3 climatology, 0.05°) when `--date` is
+  the current weekly run; CHC keeps only that run, so get its init with
+  `--bias-corrected yes --probe-latest`. When either would do and the user
+  hasn't said, ask them, giving the trade-offs in the skill's "Choosing
+  bias-corrected or raw" section (unattended: `--bias-corrected no` for
+  multi-init or anomaly work), and say in the answer whether the output is
+  bias-corrected (attr `bias_corrected`). `pr` is a
   daily rate in `mm day-1`; dims are `(number, step[, level], latitude,
   longitude)`. For a model anomaly, fetch `subc-climatology-fetch` with the
   same `--model` and `--date` and `difference` the two (aggregate both the

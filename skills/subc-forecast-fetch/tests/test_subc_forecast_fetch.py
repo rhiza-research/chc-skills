@@ -59,8 +59,13 @@ def mod(monkeypatch):
     def no_mirror(var):
         raise FileNotFoundError("no mirror in tests")
 
-    # Offline by default: the mirror is unreachable, so reads fall back to the CHC path.
+    def no_bias_corrected(url, read):
+        raise m.DataError("bias-corrected files are offline in tests")
+
+    # Offline by default: the mirror and the bias-corrected files are unreachable, so
+    # reads fall back to the raw CHC path.
     monkeypatch.setattr(m, "_open_mirror", no_mirror)
+    monkeypatch.setattr(m, "_ftp_header", no_bias_corrected)
     return m
 
 
@@ -411,3 +416,221 @@ def test_mirror_env_none_disables_mirror(mod, monkeypatch, tmp_path):
     run_skill(
         mod.fetch, "--model", "NCEP-CFSv2", "--date", "2026-11-09", "-o", str(tmp_path / "n.zarr")
     )
+
+
+# --- bias-corrected forecasts ----------------------------------------------------------
+
+KENYA = "5/34/-5/42"
+
+
+def _fake_bc(*, init="2026-11-05", n_lead=6, first_lead=0.5, members=(1, 2, 3, 4), fill=2.0):
+    """CHC bias-corrected file: scalar S, L, M, Y, X on a 0.05-degree East Africa tile."""
+    lats = np.arange(-6.975, 6.0, 0.05)
+    lons = np.arange(33.025, 43.0, 0.05)
+    data = np.full((n_lead, len(members), lats.size, lons.size), fill, dtype=np.float32)
+    s = (np.datetime64(init, "D") - np.datetime64("1960-01-01", "D")).astype(float)
+    return xr.Dataset(
+        {"pr": (("L", "M", "Y", "X"), data)},
+        coords={
+            "L": (np.arange(n_lead) + first_lead).astype(np.float32),
+            "M": np.asarray(members, dtype=np.float32),
+            "Y": lats.astype(np.float32),
+            "X": lons.astype(np.float32),
+            "S": ((), np.float32(s), {"units": "days since 1960-01-01", "calendar": "standard"}),
+        },
+        attrs={"obs_climatology": "chirps3-sat"},
+    )
+
+
+def _fake_processed(first_day="2026-11-05", n=31):
+    return xr.Dataset(
+        coords={"time": ("time", np.arange(n), {"units": f"days since {first_day} 00:00:00"})}
+    )
+
+
+def _serve_headers(mod, monkeypatch, root, processed):
+    def header(url, read):
+        return read(processed if "/Processed_forecasts/" in url else root)
+
+    monkeypatch.setattr(mod, "_ftp_header", header)
+
+
+def _today(mod, monkeypatch, day):
+    from datetime import datetime
+
+    class _Clock:
+        @staticmethod
+        def now(tz=None):
+            return datetime.fromisoformat(day + "T12:00:00+00:00")
+
+    monkeypatch.setattr(mod, "datetime", _Clock)
+
+
+def test_latest_issue_is_the_last_thursday(mod):
+    assert mod._latest_issue(date(2026, 11, 11)) == date(2026, 11, 5)  # Wednesday
+    assert mod._latest_issue(date(2026, 11, 5)) == date(2026, 11, 5)  # Thursday itself
+    assert mod._latest_issue(date(2026, 11, 4)) == date(2026, 10, 29)
+
+
+def test_bc_region_picks_the_region_holding_the_bbox(mod):
+    assert mod._bc_region((5, 34, -5, 42)) == "EA"  # Kenya
+    assert mod._bc_region((14, -18, 4, 16)) == "WA"
+    assert mod._bc_region((-15, 15, -35, 40)) == "SA"
+    assert mod._bc_region((-3, 30, -12, 40)) == "EA"  # in EA and SA: the smaller one
+    assert mod._bc_region((15, 0, 5, 40)) is None  # spans WA and EA
+    assert mod._bc_url("EMC-GEFSv12_CPC", (5, 34, -5, 42)).endswith(
+        "/Bias-corrected/EA_pr_sfc_EMC-GEFSv12.daily.nc"
+    )
+
+
+def test_bc_current_accepts_the_latest_thursday_run(mod, monkeypatch):
+    _serve_headers(mod, monkeypatch, _fake_bc(init="2026-11-05"), _fake_processed("2026-11-05"))
+    assert mod._bc_current("NCEP-CFSv2", (5, 34, -5, 42), date(2026, 11, 11)) == (
+        date(2026, 11, 5),
+        None,
+    )
+
+
+def test_bc_current_accepts_an_earlier_run_of_that_week(mod, monkeypatch):
+    # GMAO-GEOS_V3 started 2026-11-02; the processed copy still starts on Thursday.
+    _serve_headers(mod, monkeypatch, _fake_bc(init="2026-11-02"), _fake_processed("2026-11-05"))
+    init, stale = mod._bc_current("GMAO-GEOS_V3", (5, 34, -5, 42), date(2026, 11, 11))
+    assert (init, stale) == (date(2026, 11, 2), None)
+
+
+def test_bc_current_allows_a_run_without_day_zero(mod, monkeypatch):
+    # EMC-GEFSv12 has no day-0 lead: its forecast, and the processed copy, start Friday.
+    root = _fake_bc(init="2026-11-05", first_lead=1.5, members=tuple(range(31)))
+    _serve_headers(mod, monkeypatch, root, _fake_processed("2026-11-06", n=30))
+    assert mod._bc_current("EMC-GEFSv12_CPC", (5, 34, -5, 42), date(2026, 11, 11))[1] is None
+
+
+def test_bc_current_flags_a_stale_week(mod, monkeypatch):
+    # CHC has not refreshed since the 2026-10-29 issue.
+    _serve_headers(mod, monkeypatch, _fake_bc(init="2026-10-29"), _fake_processed("2026-10-29"))
+    init, stale = mod._bc_current("NCEP-CFSv2", (5, 34, -5, 42), date(2026, 11, 11))
+    assert init == date(2026, 10, 29)
+    assert "stale" in stale and "Thursday 2026-11-05" in stale
+
+
+def test_bc_current_flags_a_processed_file_that_lags(mod, monkeypatch):
+    _serve_headers(mod, monkeypatch, _fake_bc(init="2026-11-05"), _fake_processed("2026-10-29"))
+    assert mod._bc_current("NCEP-CFSv2", (5, 34, -5, 42), date(2026, 11, 11))[1] is not None
+
+
+def test_auto_reads_the_bias_corrected_forecast(mod, monkeypatch, tmp_path, capsys):
+    _today(mod, monkeypatch, "2026-11-11")
+    root = _fake_bc(init="2026-11-05")
+    _serve_headers(mod, monkeypatch, root, _fake_processed("2026-11-05"))
+    opened = []
+
+    def fake_open(url):
+        opened.append(url)
+        return root
+
+    monkeypatch.setattr(mod, "_open_remote", fake_open)
+    out = tmp_path / "bc.zarr"
+    run_skill(
+        mod.fetch, "--model", "NCEP-CFSv2", "--date", "2026-11-05", "--bbox", KENYA, "-o", str(out)
+    )
+    assert opened == [mod._bc_url("NCEP-CFSv2", (5, 34, -5, 42))]
+    assert "bias-corrected forecast from" in capsys.readouterr().err
+    ds = xr.open_zarr(out, consolidated=True)
+    assert ds.attrs["bias_corrected"] == "yes"
+    assert "CHIRPS3" in ds.attrs["bias_correction"]
+    assert ds["pr"].attrs["units"] == "mm day-1"
+    assert ds["pr"].attrs["standard_name"] == "lwe_precipitation_rate"
+    assert ds["time"].values == np.datetime64("2026-11-05", "ns")
+    assert list(ds["number"].values) == [1, 2, 3, 4]
+    assert ds["step"].values[0] == np.timedelta64(0, "ns")
+    # 0.05-degree cells overlapping the Kenya box, on a clean lattice.
+    assert ds.sizes["latitude"] == 200 and ds.sizes["longitude"] == 160
+    assert float(ds["latitude"].min()) == pytest.approx(-4.975)
+    assert float(ds["pr"].mean()) == pytest.approx(2.0)
+
+
+def test_auto_falls_back_to_raw_for_an_older_run(mod, monkeypatch, tmp_path, capsys):
+    _today(mod, monkeypatch, "2026-11-11")
+    _serve_headers(mod, monkeypatch, _fake_bc(init="2026-11-05"), _fake_processed("2026-11-05"))
+    _serve(mod, monkeypatch, {"pr": _fake_forecast("pr", init="2026-11-08")})
+    out = tmp_path / "raw.zarr"
+    run_skill(
+        mod.fetch, "--model", "NCEP-CFSv2", "--date", "2026-11-08", "--bbox", KENYA, "-o", str(out)
+    )
+    err = capsys.readouterr().err
+    assert "keeps only the latest bias-corrected NCEP-CFSv2 run (2026-11-05)" in err
+    assert xr.open_zarr(out).attrs["bias_corrected"] == "no"
+
+
+def test_auto_falls_back_to_raw_when_stale(mod, monkeypatch, tmp_path, capsys):
+    _today(mod, monkeypatch, "2026-11-11")
+    _serve_headers(mod, monkeypatch, _fake_bc(init="2026-10-29"), _fake_processed("2026-10-29"))
+    _serve(mod, monkeypatch, {"pr": _fake_forecast("pr", init="2026-10-29")})
+    out = tmp_path / "raw.zarr"
+    run_skill(
+        mod.fetch, "--model", "NCEP-CFSv2", "--date", "2026-10-29", "--bbox", KENYA, "-o", str(out)
+    )
+    assert "stale" in capsys.readouterr().err
+    assert xr.open_zarr(out).attrs["bias_corrected"] == "no"
+
+
+def test_bias_corrected_yes_fails_instead_of_falling_back(mod, monkeypatch, tmp_path):
+    _today(mod, monkeypatch, "2026-11-11")
+    _serve_headers(mod, monkeypatch, _fake_bc(init="2026-11-05"), _fake_processed("2026-11-05"))
+    with pytest.raises(SystemExit) as excinfo:
+        run_skill(
+            mod.fetch, "--model", "NCEP-CFSv2", "--date", "2026-11-08", "--bbox", KENYA,
+            "--bias-corrected", "yes", "-o", str(tmp_path / "x.zarr"),
+        )  # fmt: skip
+    assert excinfo.value.code == 1
+
+
+@pytest.mark.parametrize(
+    ("args", "reason"),
+    [
+        (["--model", "ECCC-GEPS8", "--bbox", KENYA], "no bias-corrected ECCC-GEPS8"),
+        (["--model", "NCEP-CFSv2"], "pass a --bbox"),
+        (["--model", "NCEP-CFSv2", "--bbox", KENYA, "-v", "pr", "-v", "tas"], "pr only"),
+    ],
+)
+def test_requests_bias_correction_cannot_serve_stay_raw(
+    mod, monkeypatch, tmp_path, capsys, args, reason
+):
+    def no_header(url, read):
+        raise AssertionError("bias-corrected file consulted")
+
+    monkeypatch.setattr(mod, "_ftp_header", no_header)
+    tas = _fake_forecast("tas", units="K", standard_name="air_temperature", fill=290.0)
+    files = {"pr": _fake_forecast("pr"), "tas": tas}
+    _serve(mod, monkeypatch, files)
+    run_skill(mod.fetch, *args, "--date", "2026-11-09", "-o", str(tmp_path / "r.zarr"))
+    assert reason in capsys.readouterr().err
+
+
+def test_bias_corrected_no_skips_the_check(mod, monkeypatch, tmp_path):
+    def no_header(url, read):
+        raise AssertionError("bias-corrected file consulted")
+
+    monkeypatch.setattr(mod, "_ftp_header", no_header)
+    _serve(mod, monkeypatch, {"pr": _fake_forecast("pr")})
+    run_skill(
+        mod.fetch, "--model", "NCEP-CFSv2", "--date", "2026-11-09", "--bbox", KENYA,
+        "--bias-corrected", "no", "-o", str(tmp_path / "n.zarr"),
+    )  # fmt: skip
+
+
+def test_probe_latest_bias_corrected(mod, monkeypatch, capsys):
+    _today(mod, monkeypatch, "2026-11-11")
+    _serve_headers(mod, monkeypatch, _fake_bc(init="2026-11-05"), _fake_processed("2026-11-05"))
+    run_skill(
+        mod.fetch, "--model", "NCEP-CFSv2", "--bbox", KENYA, "--bias-corrected", "yes",
+        "--probe-latest",
+    )  # fmt: skip
+    assert capsys.readouterr().out.strip() == "2026-11-05"
+    _today(mod, monkeypatch, "2026-11-13")  # the 2026-11-12 issue is not out yet
+    run_skill(
+        mod.fetch, "--model", "NCEP-CFSv2", "--bbox", KENYA, "--bias-corrected", "yes",
+        "--probe-latest",
+    )  # fmt: skip
+    captured = capsys.readouterr()
+    assert captured.out.strip() == "none" and "stale" in captured.err

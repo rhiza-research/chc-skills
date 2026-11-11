@@ -3,6 +3,7 @@
 # dependencies = [
 #   "weather-skills-core>=0.1.1",
 #   "cftime>=1.6",
+#   "fsspec",
 #   "h5netcdf",
 #   "h5py",
 #   "icechunk>=2.3",
@@ -30,6 +31,9 @@
 #   air temperatures `tas`/`tasmax`/`tasmin` K -> degree_Celsius, `psl` Pa -> hPa.
 #   Every other variable keeps its source units and standard_name.
 # - `level` (pressure-level variables such as zg, ua, va): source `P` in hPa, kept.
+# - Bias-corrected `pr` (CHC products/SubX/Data/Bias-corrected, CHIRPS3 grid, 0.05 degree):
+#   the same SubX layout with a scalar `S`; it carries no units attr, so `mm day-1`
+#   (`lwe_precipitation_rate`) is set here. CHC keeps only each model's latest run.
 
 from __future__ import annotations
 
@@ -38,7 +42,7 @@ import os
 import sys
 import time as _time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from datetime import date as _date
 
 from weather_skills_core import DataError, UsageError, weather_skill
@@ -66,6 +70,27 @@ _CREDENTIAL_ENVS = ("GCLOUD_SERVICE_CREDENTIALS", "NEURAL_GCM_SERVICE_CREDENTIAL
 SOURCES = ("auto", "mirror", "chc")
 # Refused or dropped connections can persist for minutes; back off long.
 _RETRY_DELAYS = (15, 30, 60, 120, 240)
+# CHC's bias-corrected daily precipitation (corrected to the CHIRPS3-sat climatology, on
+# the CHIRPS 0.05 degree grid), one file per region and model, overwritten with each new
+# run: there is no archive. Processed_forecasts/ holds the same values cut to 31 days.
+BC_BASE = "ftp://ftp.chc.ucsb.edu/products/SubX/Data/Bias-corrected"
+# --model name -> the model name in the bias-corrected file names.
+BC_MODELS = {
+    "NCEP-CFSv2": "NCEP-CFSv2",
+    "EMC-GEFSv12_CPC": "EMC-GEFSv12",
+    "GMAO-GEOS_V3": "GMAO-GEOS_V3",
+    "RSMAS-CCSM4": "RSMAS-CCSM4",
+}
+# Region code -> (north, west, south, east) cell-edge extent of its grid.
+BC_REGIONS = {
+    "EA": (25.0, 20.0, -13.0, 52.0),
+    "WA": (20.0, -20.0, 0.0, 30.0),
+    "SA": (-2.0, 10.0, -36.0, 55.0),
+}
+BIAS_CORRECTED = ("auto", "yes", "no")
+# CHC refreshes the files once a week: each model's latest run up to a Thursday, with the
+# Processed_forecasts copy starting on that Thursday (or the run's first day, if later).
+_BC_ISSUE_WEEKDAY = 3  # Thursday
 # --probe-latest looks back through this many month folders.
 _PROBE_MONTHS = 6
 
@@ -382,6 +407,162 @@ def _read_mirror(model: str, var: str, init: _date, bbox):
     return da.rename(var), init_value, level_attrs
 
 
+# --- bias-corrected forecasts ---------------------------------------------------------
+
+
+def _bc_region(bbox) -> str | None:
+    """The smallest bias-corrected region that contains ``bbox``, or None."""
+    north, west, south, east = bbox
+    inside = [
+        (abs((n - s) * (e - w)), code)
+        for code, (n, w, s, e) in BC_REGIONS.items()
+        if s <= south and north <= n and w <= west and east <= e and west <= east
+    ]
+    return min(inside)[1] if inside else None
+
+
+def _bc_static_reason(model: str, variables: list[str], bbox, source: str) -> str | None:
+    """Why the bias-corrected forecast cannot serve this request (None when it can)."""
+    if variables != ["pr"]:
+        return "bias-corrected forecasts exist for pr only (request pr on its own)"
+    if model not in BC_MODELS:
+        return f"CHC publishes no bias-corrected {model} forecast (only {', '.join(BC_MODELS)})"
+    if source == "mirror":
+        return "--source mirror reads only the mirror, which holds the raw forecasts"
+    if bbox is None:
+        return "bias-corrected forecasts cover African regions only; pass a --bbox inside one"
+    if _bc_region(bbox) is None:
+        extents = "; ".join(
+            f"{c} {n:g}/{w:g}/{s:g}/{e:g}" for c, (n, w, s, e) in BC_REGIONS.items()
+        )
+        return f"--bbox is not inside one bias-corrected region ({extents})"
+    return None
+
+
+def _bc_url(model: str, bbox) -> str:
+    return f"{BC_BASE}/{_bc_region(bbox)}_pr_sfc_{BC_MODELS[model]}.daily.nc"
+
+
+def _bc_init_from(s_var) -> _date:
+    """Init date from a bias-corrected file's scalar ``S`` (raw days since 1960, or decoded)."""
+    import numpy as np
+
+    value = np.asarray(s_var.values)
+    if np.issubdtype(value.dtype, np.datetime64):
+        return value.astype("datetime64[D]").item()
+    units = s_var.attrs.get("units", "")
+    if not units.startswith("days since 1960-01-01"):
+        raise DataError(f"unexpected init units {units!r} in a bias-corrected file")
+    return _date(1960, 1, 1) + timedelta(days=round(float(s_var.values)))
+
+
+def _ftp_header(url: str, read):
+    """``read(ds)`` on a remote NetCDF opened by byte ranges (header reads stay cheap)."""
+    import ftplib
+
+    import fsspec
+    import xarray as xr
+
+    def attempt():
+        try:
+            fs = fsspec.filesystem("ftp", host=_FTP_HOST, timeout=_FTP_TIMEOUT)
+            with (
+                fs.open(_ftp_path(url), "rb", block_size=4 * 2**20, cache_type="readahead") as fh,
+                xr.open_dataset(fh, engine="h5netcdf", decode_times=False) as ds,
+            ):
+                return read(ds)
+        except ftplib.Error as exc:
+            raise _FTPError(str(exc)) from exc
+
+    return _with_retry(attempt, url, missing=f"no bias-corrected file on the CHC server: {url}")
+
+
+def _bc_run(ds) -> tuple[_date, _date]:
+    """(init, first valid day) of the run in a bias-corrected file."""
+    init = _bc_init_from(ds["S"])
+    return init, init + timedelta(days=int(_lead_start_days(ds["L"])[0]))
+
+
+def _bc_first_day(ds) -> _date:
+    """First valid day of a Processed_forecasts file (``time`` in days since its start)."""
+    units = ds["time"].attrs.get("units", "")
+    if not units.startswith("days since "):
+        raise DataError(f"unexpected time units {units!r} in a processed bias-corrected file")
+    origin = _date.fromisoformat(units.removeprefix("days since ")[:10])
+    return origin + timedelta(days=int(ds["time"].values[0]))
+
+
+def _latest_issue(today: _date) -> _date:
+    """The most recent Thursday on or before ``today``."""
+    return today - timedelta(days=(today.weekday() - _BC_ISSUE_WEEKDAY) % 7)
+
+
+def _bc_current(model: str, bbox, today: _date) -> tuple[_date, str | None]:
+    """(init of CHC's bias-corrected run, why it is stale or None when current)."""
+    url = _bc_url(model, bbox)
+    init, first_valid = _ftp_header(url, _bc_run)
+    processed = url.replace("/Bias-corrected/", "/Bias-corrected/Processed_forecasts/")
+    first_day = _ftp_header(processed, _bc_first_day)
+    issue = _latest_issue(today)
+    expected = max(issue, first_valid)
+    if not (issue - timedelta(days=6) <= init <= issue) or first_day != expected:
+        return init, (
+            f"CHC's bias-corrected {model} files are stale: the run starts {init} and the "
+            f"processed forecast {first_day}, but the latest weekly issue (Thursday {issue}) "
+            f"should start {expected}"
+        )
+    return init, None
+
+
+def _read_bias_corrected(model: str, init: _date, bbox):
+    """(field, init value, level attrs) from CHC's bias-corrected file for ``bbox``."""
+    import numpy as np
+
+    url = _bc_url(model, bbox)
+
+    def read():
+        with _open_remote(url) as ds:
+            held = _bc_init_from(ds["S"])
+            if held != init:
+                raise DataError(
+                    f"CHC replaced the bias-corrected {model} file while it was read "
+                    f"(it now holds {held}); rerun"
+                )
+            da = ds["pr"].isel(_bbox_indexers(ds, bbox))
+            return da.drop_vars([c for c in ("S",) if c in da.coords]).load()
+
+    da = _with_retry(read, url, missing=f"no bias-corrected file on the CHC server: {url}")
+    da.attrs = {"units": "mm day-1", "standard_name": "lwe_precipitation_rate"}
+    return _to_field(da, var="pr"), np.datetime64(init.isoformat(), "ns"), {}
+
+
+def _choose_bias_corrected(model, variables, init, bbox, source, mode) -> str | None:
+    """The bias-corrected URL to read, or None (raw); ``mode`` yes makes a miss an error."""
+    if mode == "no":
+        return None
+    reason = _bc_static_reason(model, variables, bbox, source)
+    if reason is None:
+        url = _bc_url(model, bbox)
+        try:
+            held, reason = _bc_current(model, bbox, datetime.now(UTC).date())
+        except DataError as exc:
+            if mode == "yes":
+                raise
+            reason = f"cannot read {url} ({exc})"
+        else:
+            if reason is None and held != init:
+                reason = (
+                    f"CHC keeps only the latest bias-corrected {model} run ({held}), "
+                    f"not {init}; it has no archive"
+                )
+            if reason is None:
+                return url
+    if mode == "yes":
+        raise DataError(f"--bias-corrected yes: {reason}")
+    print(f"Raw (not bias-corrected) forecast: {reason}.", file=sys.stderr)
+    return None
+
+
 # --- reshaping ------------------------------------------------------------------------
 
 
@@ -574,6 +755,21 @@ def _resolve_vars(variable) -> list[str]:
     ),
 )
 @weather_skill.argument(
+    "--bias-corrected",
+    choices=list(BIAS_CORRECTED),
+    default="auto",
+    help=(
+        "Use CHC's bias-corrected daily precipitation (CHIRPS3 climatology, 0.05 degree grid) "
+        "instead of the raw model output: auto (when it covers the request: pr only; "
+        "NCEP-CFSv2, EMC-GEFSv12_CPC, GMAO-GEOS_V3 or RSMAS-CCSM4; a --bbox inside the EA, "
+        "WA or SA region; --date the run CHC holds, since it keeps no archive; and that run "
+        "current, i.e. its forecast starting on the latest Thursday), yes (error "
+        "when it does not), no (raw only). Default: auto. With yes, --probe-latest prints "
+        "the init of the current bias-corrected run for the --bbox region, or none when "
+        "CHC's files are stale (their forecast must start on the latest Thursday)."
+    ),
+)
+@weather_skill.argument(
     "--probe-latest",
     nargs="?",
     const=DEFAULT_VARIABLE,
@@ -584,11 +780,13 @@ def _resolve_vars(variable) -> list[str]:
         "stdout, or 'none', and exit. Does not download fields."
     ),
 )
-def fetch(date, model, variable, bbox, workers, source, probe_latest, **kwargs):
+def fetch(date, model, variable, bbox, workers, source, bias_corrected, probe_latest, **kwargs):
     """Fetch one SubX model's real-time ensemble forecast from CHC SubC as a weather-skills Zarr.
 
     Every member at every daily lead (out to 32-45 days by model) for one init date, on
-    the model's native SubX grid (1 degree; 0.5 degree for GMAO-GEOS_V3).
+    the model's native SubX grid (1 degree; 0.5 degree for GMAO-GEOS_V3). For precipitation
+    over Africa on the latest run, CHC's bias-corrected forecast (CHIRPS3 climatology, 0.05
+    degree) is used instead when it covers the request (see --bias-corrected).
     """
     import numpy as np
     import xarray as xr
@@ -605,6 +803,22 @@ def fetch(date, model, variable, bbox, workers, source, probe_latest, **kwargs):
                 f"unknown --probe-latest variable {var!r}; choose from: {', '.join(VARIABLES)}"
             )
         today = datetime.now(UTC).date()
+        if bias_corrected == "yes":
+            reason = _bc_static_reason(model, [var], bbox, source)
+            if reason is not None:
+                raise UsageError(f"--bias-corrected yes: {reason}")
+            latest, stale = _bc_current(model, bbox, today)
+            print("none" if stale else latest.isoformat())
+            print(
+                f"{stale}."
+                if stale
+                else (
+                    f"bias-corrected {model} run ({_bc_region(bbox)}) started {latest}, "
+                    f"{(today - latest).days} days ago; CHC keeps only this run."
+                ),
+                file=sys.stderr,
+            )
+            return
         latest = _probe_latest(model, var, today)
         print(latest.isoformat() if latest is not None else "none")
         if latest is not None:
@@ -627,8 +841,13 @@ def fetch(date, model, variable, bbox, workers, source, probe_latest, **kwargs):
                 raise DataError(str(exc) + "." + _nearest_inits(model, var, init)) from None
             raise
 
-    with ThreadPoolExecutor(max_workers=workers) as pool:
-        results = list(pool.map(load, vars_wanted))
+    bc_url = _choose_bias_corrected(model, vars_wanted, init, bbox, source, bias_corrected)
+    if bc_url is not None:
+        print(f"{model} pr {init}: bias-corrected forecast from {bc_url}", file=sys.stderr)
+        results = [_read_bias_corrected(model, init, bbox)]
+    else:
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            results = list(pool.map(load, vars_wanted))
 
     fields = [field for field, _, _ in results]
     ds = xr.merge(fields, join="outer", compat="override", combine_attrs="drop_conflicts")
@@ -695,7 +914,16 @@ def fetch(date, model, variable, bbox, workers, source, probe_latest, **kwargs):
         "source": f"{CHC_BASE}/ (SubX real-time forecasts mirrored from IRIDL)",
         "model": model,
         "initialization_date": init.isoformat(),
+        "bias_corrected": "yes" if bc_url is not None else "no",
     }
+    if bc_url is not None:
+        ds.attrs["title"] = f"SubC {model} bias-corrected forecast"
+        ds.attrs["source"] = f"{bc_url} (CHC bias-corrected SubX precipitation)"
+        ds.attrs["bias_correction"] = (
+            "CHC bias correction to the CHIRPS3-sat climatology (source attr obs_climatology), "
+            "on the CHIRPS 0.05 degree grid"
+        )
+        ds["pr"].attrs["long_name"] = f"{model} bias-corrected precipitation"
     stamp_cf_attrs(ds)
     ds = to_standard_units(ds)
     return stamp_data_interval(ds, period="1 day")
