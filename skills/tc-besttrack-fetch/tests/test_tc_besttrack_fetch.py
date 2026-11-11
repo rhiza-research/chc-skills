@@ -173,3 +173,24 @@ def test_tropycal_imports_in_isolated_script_env():
     if proc.returncode != 0 and "Traceback" not in proc.stderr:  # uv itself failed (offline)
         pytest.skip(f"could not build the isolated env: {proc.stderr[-500:]}")
     assert proc.returncode == 0, proc.stderr[-2000:]
+
+
+def test_ibtracs_active_drops_storms_that_ended_before_the_file_newest_fix(mod):
+    """A lagging IBTrACS ACTIVE file: a storm that ended days before the newest fix is dropped,
+    one still running at the newest fix is kept even though that fix is two days old."""
+    from datetime import UTC, datetime
+
+    def t(*args):  # naive UTC, as tropycal stores fix times
+        return datetime(*args, tzinfo=UTC).replace(tzinfo=None)
+
+    now = t(2026, 11, 9, 12)
+    last_fix = {
+        "ended": t(2026, 11, 3, 0),  # within 7 days of now, but long before the newest
+        "running": t(2026, 11, 7, 12),  # the file's newest fix, two days behind now
+        "near": t(2026, 11, 6, 18),  # 18 h before the newest: still current
+        "stale": t(2026, 10, 30, 0),  # over 7 days old
+    }
+    current, ended = mod.current_ibtracs_storms(last_fix, now)
+    assert current == ["near", "running"]
+    assert ended == ["ended"]
+    assert mod.current_ibtracs_storms({"stale": last_fix["stale"]}, now) == ([], [])

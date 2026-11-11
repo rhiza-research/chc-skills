@@ -34,7 +34,7 @@ Pass exactly one of these modes:
 - `--storm NAME --year YYYY`: one storm by name. Names are reused, so the year is required.
 - `--storm-id ID`: one storm by its official id, e.g. `AL142024` or `SH182019`. The id prefix picks the basin.
 - `--start YYYY-MM-DD --end YYYY-MM-DD`: every storm active in the window, with its full track. Needs `--basin` or `--bbox`. With `--bbox N/W/S/E`, only storms that pass the box during the window are kept.
-- `--active`: storms active now, from NHC (and JTWC when reachable) with each one's latest official forecast. Other basins come from IBTrACS ACTIVE, whose provisional tracks can be a few days old.
+- `--active`: storms active now, from NHC (and JTWC when reachable) with each one's latest official forecast. Other basins come from IBTrACS ACTIVE, whose provisional tracks can be a few days old. Because of that lag, an IBTrACS storm counts as active when its track runs to within 24 h of the newest fix in the file (and that fix is under 7 days old), not when it is recent against today; storms whose track ended earlier are left out with a note. If every storm in the file has ended, the most recent one can still be listed until 7 days have passed.
 
 Other options:
 - `--basin`: `auto` (default), `north_atlantic`, `east_pacific`, `west_pacific`, `north_indian`, `south_indian`, `south_pacific` or `south_atlantic`. With `auto`, a name is searched basin by basin.

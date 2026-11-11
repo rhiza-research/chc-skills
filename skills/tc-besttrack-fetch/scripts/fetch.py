@@ -104,7 +104,11 @@ MODEL_GROUPS = {
 TROPICAL_TYPES = {"TD", "TS", "HU", "TY", "ST", "TC", "SD", "SS", "MH", "TS/TY"}
 EXTRATROPICAL_TYPES = {"EX", "ET"}
 CACHE_DAYS = 7.0
-ACTIVE_DAYS = 7.0  # an IBTrACS ACTIVE storm counts as current when seen this recently
+# IBTrACS ACTIVE lags real time by days, so a storm counts as current when its last fix is
+# within ACTIVE_GAP_HOURS of the newest fix anywhere in the file (a track that stopped while
+# others carry on has ended), and the file's data is no older than ACTIVE_DAYS.
+ACTIVE_DAYS = 7.0
+ACTIVE_GAP_HOURS = 24.0
 USER_AGENT = "chc-skills tc-besttrack-fetch"
 
 
@@ -602,15 +606,39 @@ def active_rows(refresh):
         "jtwc",
         refresh or not _fresh(cache_dir() / "ibtracs.ACTIVE.list.v04r01.csv", 0.5),
     )
-    cutoff = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=ACTIVE_DAYS)
-    for key, d in ds.data.items():
-        if key in seen or not d["time"] or d["time"][-1] < cutoff:
-            continue
+    now = datetime.now(UTC).replace(tzinfo=None)
+    last_fix = {key: d["time"][-1] for key, d in ds.data.items() if key not in seen and d["time"]}
+    keep, dropped = current_ibtracs_storms(last_fix, now)
+    for key in keep:
+        d = ds.data[key]
         rows.append(storm_row(ds.get_storm(key)))
+        age = (now - last_fix[key]).total_seconds() / 3600.0
         notes.append(
-            f"{key} {d.get('name', '')} from IBTrACS ACTIVE (last fix {d['time'][-1]:%Y-%m-%d %H} UTC)"
+            f"{key} {d.get('name', '')} from IBTrACS ACTIVE "
+            f"(last fix {last_fix[key]:%Y-%m-%d %H} UTC, {age:.0f} h ago)"
+        )
+    for key in dropped:
+        notes.append(
+            f"{key} {ds.data[key].get('name', '')} left out: its IBTrACS ACTIVE track ended "
+            f"{last_fix[key]:%Y-%m-%d %H} UTC, before the file's newest fixes"
         )
     return rows, notes
+
+
+def current_ibtracs_storms(last_fix, now):
+    """Split IBTrACS ACTIVE storms ({key: last fix time}) into (current, ended).
+
+    Measured against the file's newest fix rather than `now`, because the file lags real time:
+    a storm is current when its track runs to within ACTIVE_GAP_HOURS of that newest fix.
+    Storms whose last fix is older than ACTIVE_DAYS before `now` are neither (stale file)."""
+    recent = {k: t for k, t in last_fix.items() if t >= now - timedelta(days=ACTIVE_DAYS)}
+    if not recent:
+        return [], []
+    newest = max(recent.values())
+    cutoff = newest - timedelta(hours=ACTIVE_GAP_HOURS)
+    current = sorted(k for k, t in recent.items() if t >= cutoff)
+    ended = sorted(k for k, t in recent.items() if t < cutoff)
+    return current, ended
 
 
 # --------------------------------------------------------------------------- skill
