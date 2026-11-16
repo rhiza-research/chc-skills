@@ -98,7 +98,40 @@ precipitation). Checked 2026-11-11:
 - Refresh: weekly. Per CHC, the files hold the forecasts starting on the latest Thursday
   through the next 30 days; each model's latest run up to that Thursday (2026-11-05
   issue: CFSv2 and GEFSv12 2026-11-05, GEOS_V3 2026-11-02, CCSM4 2026-11-01), written
-  2026-11-06 to 2026-11-08. The previous issue is overwritten; nothing is archived.
+  2026-11-06 to 2026-11-08. The previous issue is overwritten in this folder and
+  copied to the archive (below).
 - Freshness check in the skill: today's latest Thursday T; the run is current when
   T-6 <= init <= T and the processed file's first day equals max(T, init + first lead).
   Both are read from the file headers by byte ranges (a few seconds each).
+
+## Bias-corrected archive
+
+`ftp://ftp.chc.ucsb.edu/products/SubX/Data/Archive/{issue Thursday}/Processed_forecasts/{region}_pr_sfc_{model}.daily.nc`
+(HTTPS: `https://data.chc.ucsb.edu/products/SubX/Data/Archive/`). Checked 2026-11-16:
+
+| Issues | Regions | Models |
+| --- | --- | --- |
+| 2026-09-24 to 2026-10-29 (backfilled 2026-11-12) | EA | CFSv2, GEFSv12, GEOS_V3, ECCC-GEPS8, ESRL-FIMr1p1; CCSM4 except 09-24 and 10-15 |
+| 2026-11-05 on (copied when the next issue is written) | EA, WA, SA | CFSv2, GEFSv12, GEOS_V3, CCSM4 |
+
+- Layout: the processed copy only, `precip(time, ens, latitude, longitude)`, `time` in days
+  since the first day: 31 days from the Thursday (GEFSv12 30 days from the Friday until
+  the 2026-11-12 issue, whose run started the Wednesday and so starts the Thursday too).
+  No `S`: the init is not recorded. Same 0.05 degree grids as the current files,
+  `obs_climatology = chirps3-sat`, no units (mm/day). Members: CFSv2 4, GEFSv12 31,
+  GEOS_V3 5 (15 in 2026-10-01 and 2026-10-29, apparently three lagged runs), CCSM4 9,
+  ECCC-GEPS8 21, ESRL-FIMr1p1 4.
+- Sizes (EA): CFSv2 and FIM 241 MB, GEOS_V3 302 MB (905 MB at 15 members), CCSM4
+  543 MB, ECCC-GEPS8 1.27 GB, GEFSv12 1.81 GB.
+- Init inference in the skill: issue T = the Thursday on or after `--date`; read the
+  archived file's first day F; list the model's raw SubC inits in [T-6, T] with
+  max(T, init + first lead) = F (first lead 1 day for GEFSv12, else 0). One candidate:
+  that is the run. Several (CFSv2 daily; GEFSv12 when F is the Thursday; GEOS_V3 or
+  ECCC-GEPS8 with a run on the Thursday, which CHC did not always have: the 2026-11-12
+  issue used GEOS_V3 2026-11-07 though a 2026-11-12 run exists): read each raw run over
+  `--bbox`, correlate its bbox-mean daily series with the archived one over the shared
+  days (per member when the member counts agree, else the ensemble mean) and keep the
+  best when it leads the next by at least 0.1. Checked on the 2026-11-12 issue: GEOS_V3
+  per-member r = 0.92 for 2026-11-07 against 0.21 for 2026-11-12; CFSv2 0.96 for
+  2026-11-12 against 0.74 for 2026-11-11. The archive is used only when the winner is
+  `--date`.

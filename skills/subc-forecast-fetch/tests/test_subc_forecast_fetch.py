@@ -64,8 +64,12 @@ def mod(monkeypatch):
 
     # Offline by default: the mirror and the bias-corrected files are unreachable, so
     # reads fall back to the raw CHC path.
+    def no_listing(url):
+        raise m.DataError("CHC listings are offline in tests")
+
     monkeypatch.setattr(m, "_open_mirror", no_mirror)
     monkeypatch.setattr(m, "_ftp_header", no_bias_corrected)
+    monkeypatch.setattr(m, "_ftp_list", no_listing)
     return m
 
 
@@ -448,8 +452,16 @@ def _fake_processed(first_day="2026-11-05", n=31):
     )
 
 
-def _serve_headers(mod, monkeypatch, root, processed):
+def _serve_headers(mod, monkeypatch, root, processed, archive=None):
+    """Header reads: the current root and processed files, and ``archive`` (issue date ->
+    processed Dataset; any other archived issue is missing)."""
+
     def header(url, read):
+        if "/Archive/" in url:
+            issue = url.split("/Archive/")[1][:10]
+            if issue not in (archive or {}):
+                raise mod.DataError(f"no bias-corrected file on the CHC server: {url}")
+            return read(archive[issue])
         return read(processed if "/Processed_forecasts/" in url else root)
 
     monkeypatch.setattr(mod, "_ftp_header", header)
@@ -534,7 +546,7 @@ def test_auto_reads_the_bias_corrected_forecast(mod, monkeypatch, tmp_path, caps
         mod.fetch, "--model", "NCEP-CFSv2", "--date", "2026-11-05", "--bbox", KENYA, "-o", str(out)
     )
     assert opened == [mod._bc_url("NCEP-CFSv2", (5, 34, -5, 42))]
-    assert "bias-corrected forecast from" in capsys.readouterr().err
+    assert "bias-corrected forecast (2026-11-05 issue) from" in capsys.readouterr().err
     ds = xr.open_zarr(out, consolidated=True)
     assert ds.attrs["bias_corrected"] == "yes"
     assert "CHIRPS3" in ds.attrs["bias_correction"]
@@ -558,7 +570,8 @@ def test_auto_falls_back_to_raw_for_an_older_run(mod, monkeypatch, tmp_path, cap
         mod.fetch, "--model", "NCEP-CFSv2", "--date", "2026-11-08", "--bbox", KENYA, "-o", str(out)
     )
     err = capsys.readouterr().err
-    assert "keeps only the latest bias-corrected NCEP-CFSv2 run (2026-11-05)" in err
+    assert "no weekly issue covers 2026-11-08 yet" in err
+    assert "the current NCEP-CFSv2 run is 2026-11-05" in err
     assert xr.open_zarr(out).attrs["bias_corrected"] == "no"
 
 
@@ -588,7 +601,10 @@ def test_bias_corrected_yes_fails_instead_of_falling_back(mod, monkeypatch, tmp_
 @pytest.mark.parametrize(
     ("args", "reason"),
     [
-        (["--model", "ECCC-GEPS8", "--bbox", KENYA], "no bias-corrected ECCC-GEPS8"),
+        (
+            ["--model", "GMAO-GEOS_V2p1_5daily", "--bbox", KENYA],
+            "no bias-corrected GMAO-GEOS_V2p1_5daily",
+        ),
         (["--model", "NCEP-CFSv2"], "pass a --bbox"),
         (["--model", "NCEP-CFSv2", "--bbox", KENYA, "-v", "pr", "-v", "tas"], "pr only"),
     ],
@@ -634,3 +650,250 @@ def test_probe_latest_bias_corrected(mod, monkeypatch, capsys):
     )  # fmt: skip
     captured = capsys.readouterr()
     assert captured.out.strip() == "none" and "stale" in captured.err
+
+
+# --- bias-corrected archive ------------------------------------------------------------
+
+
+def _fake_archived(first_day="2026-10-29", n=31, members=(1, 2, 3, 4), fill=3.0):
+    """An archived processed file: precip(time, ens, latitude, longitude), no init."""
+    lats = np.arange(-6.975, 6.0, 0.05)
+    lons = np.arange(33.025, 43.0, 0.05)
+    data = np.full((n, len(members), lats.size, lons.size), fill, dtype=np.float32)
+    return xr.Dataset(
+        {"precip": (("time", "ens", "latitude", "longitude"), data)},
+        coords={
+            "time": ("time", np.arange(n), {"units": f"days since {first_day} 00:00:00"}),
+            "ens": np.asarray(members, dtype=np.float32),
+            "latitude": lats.astype(np.float32),
+            "longitude": lons.astype(np.float32),
+        },
+        attrs={"obs_climatology": "chirps3-sat"},
+    )
+
+
+def _raw_inits(mod, monkeypatch, inits):
+    days = [date.fromisoformat(d) for d in inits]
+    monkeypatch.setattr(
+        mod, "_list_inits", lambda model, var, month: [d for d in days if d.month == month]
+    )
+
+
+def test_issue_for_is_the_next_thursday(mod):
+    assert mod._issue_for(date(2026, 10, 29)) == date(2026, 10, 29)  # Thursday itself
+    assert mod._issue_for(date(2026, 10, 26)) == date(2026, 10, 29)
+    assert mod._issue_for(date(2026, 10, 30)) == date(2026, 11, 5)
+    assert mod._bc_archive_url("NCEP-CFSv2", (5, 34, -5, 42), date(2026, 10, 29)) == (
+        "ftp://ftp.chc.ucsb.edu/products/SubX/Data/Archive/2026-10-29/"
+        "Processed_forecasts/EA_pr_sfc_NCEP-CFSv2.daily.nc"
+    )
+
+
+def test_issue_candidates_are_the_runs_that_fit(mod, monkeypatch):
+    issue = date(2026, 11, 12)
+    d = date.fromisoformat
+    # GEOS_V3 runs every 5 days; a run on the Thursday itself may or may not have been used.
+    _raw_inits(mod, monkeypatch, ["2026-11-02", "2026-11-07", "2026-11-12"])
+    assert mod._bc_issue_candidates("GMAO-GEOS_V3", issue, issue) == [
+        d("2026-11-12"),
+        d("2026-11-07"),
+    ]
+    # GEFSv12 has no day-0 lead: a Thursday start rules out the Thursday run, a Friday
+    # start pins it.
+    _raw_inits(mod, monkeypatch, ["2026-11-10", "2026-11-11", "2026-11-12"])
+    assert mod._bc_issue_candidates("EMC-GEFSv12_CPC", issue, issue) == [
+        d("2026-11-11"),
+        d("2026-11-10"),
+    ]
+    assert mod._bc_issue_candidates("EMC-GEFSv12_CPC", issue, d("2026-11-13")) == [d("2026-11-12")]
+    # Spans two month folders (the week starts 2026-10-30).
+    _raw_inits(mod, monkeypatch, ["2026-10-29", "2026-10-31"])
+    assert mod._bc_issue_candidates("RSMAS-CCSM4", d("2026-11-05"), d("2026-11-05")) == [
+        d("2026-10-31")
+    ]
+    _raw_inits(mod, monkeypatch, [])
+    assert mod._bc_issue_candidates("NCEP-CFSv2", issue, issue) == []
+
+
+def test_auto_reads_an_archived_issue(mod, monkeypatch, tmp_path, capsys):
+    _today(mod, monkeypatch, "2026-11-16")
+    archived = _fake_archived("2026-10-29", members=tuple(range(1, 6)))
+    _serve_headers(
+        mod,
+        monkeypatch,
+        _fake_bc(init="2026-11-07"),
+        _fake_processed("2026-11-12"),
+        archive={"2026-10-29": archived},
+    )
+    _raw_inits(mod, monkeypatch, ["2026-10-21", "2026-10-26", "2026-10-31"])
+    opened = []
+
+    def fake_open(url):
+        opened.append(url)
+        return archived
+
+    monkeypatch.setattr(mod, "_open_remote", fake_open)
+    out = tmp_path / "arch.zarr"
+    run_skill(
+        mod.fetch, "--model", "GMAO-GEOS_V3", "--date", "2026-10-26", "--bbox", KENYA,
+        "-o", str(out),
+    )  # fmt: skip
+    assert opened == [mod._bc_archive_url("GMAO-GEOS_V3", (5, 34, -5, 42), date(2026, 10, 29))]
+    err = capsys.readouterr().err
+    assert "2026-10-29 issue" in err and "inferred" in err
+    ds = xr.open_zarr(out, consolidated=True)
+    assert ds.attrs["bias_corrected"] == "yes"
+    assert ds.attrs["bias_corrected_issue"] == "2026-10-29"
+    assert "inferred" in ds.attrs["bias_corrected_init"]
+    assert ds["time"].values == np.datetime64("2026-10-26", "ns")
+    # The archive starts on the Thursday: three days after the 2026-10-26 init.
+    assert list(ds["step"].values / np.timedelta64(1, "D"))[:2] == [3, 4]
+    assert ds["valid_time"].values[0] == np.datetime64("2026-10-29", "ns")
+    assert ds.sizes["step"] == 31 and list(ds["number"].values) == [1, 2, 3, 4, 5]
+    assert ds.sizes["latitude"] == 200 and ds.sizes["longitude"] == 160
+    assert ds["pr"].attrs["units"] == "mm day-1"
+    assert float(ds["pr"].mean()) == pytest.approx(3.0)
+
+
+def test_auto_stays_raw_when_the_archived_issue_used_another_run(
+    mod, monkeypatch, tmp_path, capsys
+):
+    _today(mod, monkeypatch, "2026-11-16")
+    _serve_headers(
+        mod,
+        monkeypatch,
+        _fake_bc(init="2026-11-12"),
+        _fake_processed("2026-11-12"),
+        archive={"2026-10-29": _fake_archived("2026-10-29")},
+    )
+    # CCSM4 runs weekly: only 2026-10-25 fits the issue.
+    _raw_inits(mod, monkeypatch, ["2026-10-18", "2026-10-25", "2026-11-01"])
+    _serve(mod, monkeypatch, {"pr": _fake_forecast("pr", init="2026-10-24")})
+    out = tmp_path / "raw.zarr"
+    run_skill(
+        mod.fetch, "--model", "RSMAS-CCSM4", "--date", "2026-10-24", "--bbox", KENYA,
+        "-o", str(out),
+    )  # fmt: skip
+    assert "issue was built from 2026-10-25, not 2026-10-24" in capsys.readouterr().err
+    assert xr.open_zarr(out).attrs["bias_corrected"] == "no"
+
+
+def _matching_runs(mod, monkeypatch, used: str, other: str, issue="2026-10-29", members=4):
+    """An archived issue built from ``used``, and raw runs ``used`` and ``other``: the raw
+    ``used`` run shares the archived daily series (scaled), ``other`` does not."""
+    rng = np.random.default_rng(0)
+    days = np.datetime64(issue, "D") + np.arange(31)
+    truth = {day: rng.gamma(2.0, 2.0, members) for day in days}
+    archived = _fake_archived(issue, members=tuple(range(1, members + 1)))
+    archived["precip"].values[:] = np.stack([truth[day] for day in days])[:, :, None, None]
+    raw = {}
+    for init, series in ((used, truth), (other, None)):
+        ds = _fake_forecast("pr", init=init, n_lead=40, members=tuple(range(1, members + 1)))
+        valid = np.datetime64(init, "D") + np.arange(40)
+        vals = np.stack(
+            [
+                series[v] if series is not None and v in series else rng.gamma(2.0, 2.0, members)
+                for v in valid
+            ]
+        )  # (lead, member)
+        ds["pr"].values[:] = (vals.T / 86400 * 0.8)[None, :, :, None, None]
+        raw[init.replace("-", "")] = ds
+    archive_url = []
+
+    def fake_open(url):
+        if "/Archive/" in url:
+            archive_url.append(url)
+            return archived
+        for stamp, ds in raw.items():
+            if url.endswith(f"_{stamp}.daily.nc"):
+                return ds
+        raise AssertionError(f"unexpected url {url}")
+
+    monkeypatch.setattr(mod, "_open_remote", fake_open)
+    _serve_headers(
+        mod,
+        monkeypatch,
+        _fake_bc(init="2026-11-12"),
+        _fake_processed("2026-11-12"),
+        archive={issue: archived},
+    )
+    _raw_inits(mod, monkeypatch, sorted({used, other}))
+    return archive_url
+
+
+def test_run_match_picks_the_run_the_issue_was_built_from(mod, monkeypatch, tmp_path, capsys):
+    # GEOS_V3 2026-11-12 case: runs on 10-23 and on the Thursday 10-29 both fit; the issue
+    # used 10-23.
+    _today(mod, monkeypatch, "2026-11-16")
+    _matching_runs(mod, monkeypatch, used="2026-10-23", other="2026-10-29", members=5)
+    out = tmp_path / "used.zarr"
+    run_skill(
+        mod.fetch, "--model", "GMAO-GEOS_V3", "--date", "2026-10-23", "--bbox", KENYA,
+        "-o", str(out),
+    )  # fmt: skip
+    assert "Run match" in capsys.readouterr().err
+    ds = xr.open_zarr(out)
+    assert ds.attrs["bias_corrected"] == "yes"
+    assert ds["step"].values[0] == np.timedelta64(6, "D")  # 10-29 is 6 days after 10-23
+
+
+def test_run_match_keeps_another_run_raw(mod, monkeypatch, tmp_path, capsys):
+    _today(mod, monkeypatch, "2026-11-16")
+    _matching_runs(mod, monkeypatch, used="2026-10-23", other="2026-10-29", members=5)
+    out = tmp_path / "other.zarr"
+    run_skill(
+        mod.fetch, "--model", "GMAO-GEOS_V3", "--date", "2026-10-29", "--bbox", KENYA,
+        "-o", str(out),
+    )  # fmt: skip
+    assert "built from the 2026-10-23 run, not 2026-10-29" in capsys.readouterr().err
+    assert xr.open_zarr(out).attrs["bias_corrected"] == "no"
+    with pytest.raises(SystemExit) as excinfo:
+        run_skill(
+            mod.fetch, "--model", "GMAO-GEOS_V3", "--date", "2026-10-29", "--bbox", KENYA,
+            "--bias-corrected", "yes", "-o", str(tmp_path / "yes.zarr"),
+        )  # fmt: skip
+    assert excinfo.value.code == 1
+
+
+def test_run_match_needs_a_clear_winner(mod):
+    bc = _fake_archived("2026-10-29")
+    assert mod._BC_MATCH_MARGIN > 0
+    # No candidate reads -> nothing finite to rank.
+    assert (
+        mod._bc_match("NCEP-CFSv2", bc["precip"], date(2026, 10, 29), [], (5, 34, -5, 42)) is None
+    )
+
+
+def test_auto_stays_raw_when_the_week_is_not_archived(mod, monkeypatch, tmp_path, capsys):
+    _today(mod, monkeypatch, "2026-11-16")
+    _serve_headers(mod, monkeypatch, _fake_bc(init="2026-11-12"), _fake_processed("2026-11-12"))
+    _serve(mod, monkeypatch, {"pr": _fake_forecast("pr", init="2026-09-10")})
+    out = tmp_path / "raw.zarr"
+    run_skill(
+        mod.fetch, "--model", "NCEP-CFSv2", "--date", "2026-09-10", "--bbox", KENYA,
+        "-o", str(out),
+    )  # fmt: skip
+    assert "archive has no EA NCEP-CFSv2 file for the 2026-09-10 issue" in (capsys.readouterr().err)
+    assert xr.open_zarr(out).attrs["bias_corrected"] == "no"
+
+
+def test_bias_corrected_yes_reads_the_archive(mod, monkeypatch, tmp_path):
+    _today(mod, monkeypatch, "2026-11-16")
+    archived = _fake_archived("2026-11-05")
+    _serve_headers(
+        mod,
+        monkeypatch,
+        _fake_bc(init="2026-11-12"),
+        _fake_processed("2026-11-12"),
+        archive={"2026-11-05": archived},
+    )
+    _raw_inits(mod, monkeypatch, ["2026-10-29", "2026-11-05"])  # only 11-05 fits
+    monkeypatch.setattr(mod, "_open_remote", lambda url: archived)
+    out = tmp_path / "yes.zarr"
+    run_skill(
+        mod.fetch, "--model", "NCEP-CFSv2", "--date", "2026-11-05", "--bbox", KENYA,
+        "--bias-corrected", "yes", "-o", str(out),
+    )  # fmt: skip
+    ds = xr.open_zarr(out)
+    assert ds.attrs["bias_corrected_issue"] == "2026-11-05"
+    assert ds["step"].values[0] == np.timedelta64(0, "ns")

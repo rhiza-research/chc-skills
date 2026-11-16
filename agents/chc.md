@@ -57,8 +57,10 @@ weather-skills transforms and plotters when those are available (for example
   from 2026-09-01 is mirrored). For `pr` alone over Africa (a `--bbox` inside
   CHC's EA, WA or SA region) on CFSv2, GEFSv12, GEOS_V3 or CCSM4, it uses
   CHC's bias-corrected forecast (CHIRPS3 climatology, 0.05°) when `--date` is
-  the current weekly run; CHC keeps only that run, so get its init with
-  `--bias-corrected yes --probe-latest`. When either would do and the user
+  the run a weekly issue (Thursday) used: the current one, full leads (get its
+  init with `--bias-corrected yes --probe-latest`), or an archived one from
+  2026-09-24, 31 days from the Thursday (EA only before 2026-11-05; the init
+  is inferred). When either would do and the user
   hasn't said, ask them, giving the trade-offs in the skill's "Choosing
   bias-corrected or raw" section (unattended: `--bias-corrected no` for
   multi-init or anomaly work), and say in the answer whether the output is

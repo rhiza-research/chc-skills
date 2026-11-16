@@ -33,7 +33,10 @@
 # - `level` (pressure-level variables such as zg, ua, va): source `P` in hPa, kept.
 # - Bias-corrected `pr` (CHC products/SubX/Data/Bias-corrected, CHIRPS3 grid, 0.05 degree):
 #   the same SubX layout with a scalar `S`; it carries no units attr, so `mm day-1`
-#   (`lwe_precipitation_rate`) is set here. CHC keeps only each model's latest run.
+#   (`lwe_precipitation_rate`) is set here. Past weekly issues come from
+#   products/SubX/Data/Archive/{Thursday}/Processed_forecasts: `precip(time, ens,
+#   latitude, longitude)`, 31 days from the Thursday, no init; `ens` -> `number`, and
+#   `step` counts from the inferred init (first step = first day - init).
 
 from __future__ import annotations
 
@@ -72,15 +75,28 @@ SOURCES = ("auto", "mirror", "chc")
 _RETRY_DELAYS = (15, 30, 60, 120, 240)
 # CHC's bias-corrected daily precipitation (corrected to the CHIRPS3-sat climatology, on
 # the CHIRPS 0.05 degree grid), one file per region and model, overwritten with each new
-# run: there is no archive. Processed_forecasts/ holds the same values cut to 31 days.
+# run. Processed_forecasts/ holds the same values cut to 31 days from the issue Thursday.
 BC_BASE = "ftp://ftp.chc.ucsb.edu/products/SubX/Data/Bias-corrected"
+# Past weekly issues: Archive/{issue Thursday}/Processed_forecasts/, the 31-day processed
+# copy only (no init recorded). EA only before the 2026-11-05 issue.
+BC_ARCHIVE = "ftp://ftp.chc.ucsb.edu/products/SubX/Data/Archive"
 # --model name -> the model name in the bias-corrected file names.
 BC_MODELS = {
     "NCEP-CFSv2": "NCEP-CFSv2",
     "EMC-GEFSv12_CPC": "EMC-GEFSv12",
     "GMAO-GEOS_V3": "GMAO-GEOS_V3",
     "RSMAS-CCSM4": "RSMAS-CCSM4",
+    # Only in the EA archive weeks before 2026-11-05.
+    "ECCC-GEPS8": "ECCC-GEPS8",
+    "ESRL-FIMr1p1": "ESRL-FIMr1p1",
 }
+# Models whose first daily lead is not day 0 (GEFSv12's L starts at 1.5 days).
+_BC_FIRST_LEAD = {"EMC-GEFSv12_CPC": 1}
+# When several raw runs fit an archived issue, the one whose bbox-mean daily series
+# correlates best with the bias-corrected one wins, by at least this margin. Checked on the
+# 2026-11-12 issue (init known): GEOS_V3 0.92 for its run against 0.21 for the next one,
+# CFSv2 0.96 against 0.74 for the day before.
+_BC_MATCH_MARGIN = 0.1
 # Region code -> (north, west, south, east) cell-edge extent of its grid.
 BC_REGIONS = {
     "EA": (25.0, 20.0, -13.0, 52.0),
@@ -473,6 +489,9 @@ def _ftp_header(url: str, read):
                 return read(ds)
         except ftplib.Error as exc:
             raise _FTPError(str(exc)) from exc
+        except (FileNotFoundError, StopIteration) as exc:
+            # fsspec's FTP stat of a file missing from a listed folder ends in one of these.
+            raise _FTPError(f"550 {exc or 'no such file'}") from exc
 
     return _with_retry(attempt, url, missing=f"no bias-corrected file on the CHC server: {url}")
 
@@ -514,6 +533,146 @@ def _bc_current(model: str, bbox, today: _date) -> tuple[_date, str | None]:
     return init, None
 
 
+def _issue_for(init: _date) -> _date:
+    """The weekly issue (Thursday) whose files a run started on ``init`` would be in."""
+    return init + timedelta(days=(_BC_ISSUE_WEEKDAY - init.weekday()) % 7)
+
+
+def _bc_archive_url(model: str, bbox, issue: _date) -> str:
+    return (
+        f"{BC_ARCHIVE}/{issue.isoformat()}/Processed_forecasts/"
+        f"{_bc_region(bbox)}_pr_sfc_{BC_MODELS[model]}.daily.nc"
+    )
+
+
+def _processed_first_day(time_var) -> _date:
+    """First valid day of a processed file's ``time`` (raw days since its start, or decoded)."""
+    import numpy as np
+
+    values = np.asarray(time_var.values)
+    if np.issubdtype(values.dtype, np.datetime64):
+        return values[0].astype("datetime64[D]").item()
+    units = time_var.attrs.get("units", "")
+    if not units.startswith("days since "):
+        raise DataError(f"unexpected time units {units!r} in a processed bias-corrected file")
+    origin = _date.fromisoformat(units.removeprefix("days since ")[:10])
+    return origin + timedelta(days=int(values[0]))
+
+
+def _bc_issue_candidates(model: str, issue: _date, first_day: _date) -> list[_date]:
+    """Raw runs ``issue`` may have been built from, newest first.
+
+    The archived files record no init. CHC takes each model's latest run up to the issue
+    Thursday that it has by then, and the processed copy starts on max(Thursday, the run's
+    first valid day): every raw init in the week consistent with that first day. A run on
+    the Thursday itself may not have reached CHC in time (GEOS_V3 2026-11-12), so more than
+    one can fit; ``_bc_match`` decides from the data.
+    """
+    start = issue - timedelta(days=6)
+    months = sorted({start.month, issue.month})
+    raw = {d for month in months for d in _list_inits(model, "pr", month)}
+    lead = timedelta(days=_BC_FIRST_LEAD.get(model, 0))
+    return sorted(
+        (d for d in raw if start <= d <= issue and max(issue, d + lead) == first_day),
+        reverse=True,
+    )
+
+
+def _bc_archived(model: str, init: _date, bbox, today: _date):
+    """``(archive URL, issue date, candidate runs)`` when an archived issue may have been
+    built from ``init``, else ``(None, why not, [])``."""
+    issue = _issue_for(init)
+    if issue > _latest_issue(today):
+        return None, f"no weekly issue covers {init} yet (the next is Thursday {issue})", []
+    url = _bc_archive_url(model, bbox, issue)
+    try:
+        first_day = _ftp_header(url, lambda ds: _processed_first_day(ds["time"]))
+    except DataError as exc:
+        if str(exc).startswith("no bias-corrected file"):
+            return (
+                None,
+                (
+                    f"the bias-corrected archive has no {_bc_region(bbox)} {model} file for "
+                    f"the {issue} issue"
+                ),
+                [],
+            )
+        raise
+    candidates = _bc_issue_candidates(model, issue, first_day)
+    if init not in candidates:
+        runs = ", ".join(str(d) for d in candidates) or "no raw run in its week"
+        return None, f"CHC's {issue} bias-corrected issue was built from {runs}, not {init}", []
+    return url, issue.isoformat(), candidates
+
+
+def _bc_match(model: str, bc, first_day: _date, candidates: list[_date], bbox) -> _date | None:
+    """The candidate raw run whose bbox-mean daily series fits ``bc`` best, or None when
+    no run wins by ``_BC_MATCH_MARGIN``.
+
+    Scored per member (members are the same runs) when the member counts agree, else on
+    the ensemble mean (GEOS_V3 issues with 15 lagged members).
+    """
+    import numpy as np
+
+    b_days = np.datetime64(first_day.isoformat(), "D") + np.arange(bc.sizes["time"])
+    b = bc.mean(("latitude", "longitude")).transpose("time", "ens").values.astype("float64")
+    scores = {}
+    for init in candidates:
+        raw, _, _ = _read_variable(model, "pr", init, bbox)
+        r = raw.mean(("latitude", "longitude")).transpose("step", "number")
+        r_days = np.datetime64(init.isoformat(), "D") + (
+            r["step"].values / np.timedelta64(1, "D")
+        ).astype("int64")
+        _, bi, ri = np.intersect1d(b_days, r_days, return_indices=True)
+        bv, rv = b[bi], r.values.astype("float64")[ri]
+        if bi.size < 5:
+            scores[init] = float("nan")
+        elif bv.shape[1] == rv.shape[1]:
+            scores[init] = float(
+                np.nanmean([np.corrcoef(bv[:, k], rv[:, k])[0, 1] for k in range(bv.shape[1])])
+            )
+        else:
+            scores[init] = float(np.corrcoef(bv.mean(1), rv.mean(1))[0, 1])
+    ranked = sorted((s, d) for d, s in scores.items() if np.isfinite(s))
+    print(
+        "Run match (correlation with the archived issue): "
+        + ", ".join(f"{d} {s:.2f}" for d, s in scores.items()),
+        file=sys.stderr,
+    )
+    if not ranked:
+        return None
+    if len(ranked) > 1 and ranked[-1][0] - ranked[-2][0] < _BC_MATCH_MARGIN:
+        return None
+    return ranked[-1][1]
+
+
+def _read_bc_archive(url: str, bbox):
+    """(``precip(time, ens, latitude, longitude)`` over ``bbox``, first valid day) from an
+    archived processed bias-corrected file."""
+
+    def read():
+        with _open_remote(url) as ds:
+            first_day = _processed_first_day(ds["time"])
+            lat_idx, lon_idx = _bbox_index(ds["latitude"].values, ds["longitude"].values, bbox)
+            da = ds["precip"].isel(latitude=lat_idx, longitude=lon_idx).load()
+        return da, first_day
+
+    return _with_retry(read, url, missing=f"no bias-corrected file on the CHC server: {url}")
+
+
+def _bc_archive_field(da, first_day: _date, init: _date):
+    """(field, init value, level attrs) from an archived issue read for the run ``init``."""
+    import numpy as np
+
+    offset = (first_day - init).days
+    da = da.rename({"ens": "number", "time": "step"})
+    da = da.assign_coords(step=(np.arange(da.sizes["step"]) + offset + 0.5).astype("float64"))
+    keep = ("number", "step", "latitude", "longitude")
+    da = da.drop_vars([c for c in da.coords if c not in keep])
+    da.attrs = {"units": "mm day-1", "standard_name": "lwe_precipitation_rate"}
+    return _to_field(da.rename("pr"), var="pr"), np.datetime64(init.isoformat(), "ns"), {}
+
+
 def _read_bias_corrected(model: str, init: _date, bbox):
     """(field, init value, level attrs) from CHC's bias-corrected file for ``bbox``."""
     import numpy as np
@@ -536,31 +695,43 @@ def _read_bias_corrected(model: str, init: _date, bbox):
     return _to_field(da, var="pr"), np.datetime64(init.isoformat(), "ns"), {}
 
 
-def _choose_bias_corrected(model, variables, init, bbox, source, mode) -> str | None:
-    """The bias-corrected URL to read, or None (raw); ``mode`` yes makes a miss an error."""
+def _choose_bias_corrected(model, variables, init, bbox, source, mode):
+    """``(kind, url, issue, candidate runs)`` of the bias-corrected file to read, or None.
+
+    ``kind`` is ``current`` (CHC's latest run, full leads) or ``archive`` (a past weekly
+    issue, 31 days from its Thursday, with the raw runs it may have been built from).
+    ``mode`` yes makes a miss an error.
+    """
     if mode == "no":
         return None
+    candidates: list[_date] = []
     reason = _bc_static_reason(model, variables, bbox, source)
     if reason is None:
+        today = datetime.now(UTC).date()
         url = _bc_url(model, bbox)
         try:
-            held, reason = _bc_current(model, bbox, datetime.now(UTC).date())
+            held, stale = _bc_current(model, bbox, today)
         except DataError as exc:
-            if mode == "yes":
-                raise
-            reason = f"cannot read {url} ({exc})"
-        else:
-            if reason is None and held != init:
-                reason = (
-                    f"CHC keeps only the latest bias-corrected {model} run ({held}), "
-                    f"not {init}; it has no archive"
-                )
-            if reason is None:
-                return url
+            held, stale = None, f"cannot read {url} ({exc})"
+        if held == init and stale is None:
+            return "current", url, _latest_issue(today).isoformat(), []
+        try:
+            archived, note, candidates = _bc_archived(model, init, bbox, today)
+        except DataError as exc:
+            archived, note = None, f"cannot read the bias-corrected archive ({exc})"
+        if archived is not None:
+            return "archive", archived, note, candidates
+        current = stale or (f"the current {model} run is {held}" if held is not None else "")
+        reason = f"{note}; {current}" if current else note
+    _bc_miss(reason, mode)
+    return None
+
+
+def _bc_miss(reason: str, mode: str) -> None:
+    """Report why the raw forecast is used; with ``mode`` yes that is an error."""
     if mode == "yes":
         raise DataError(f"--bias-corrected yes: {reason}")
     print(f"Raw (not bias-corrected) forecast: {reason}.", file=sys.stderr)
-    return None
 
 
 # --- reshaping ------------------------------------------------------------------------
@@ -761,9 +932,10 @@ def _resolve_vars(variable) -> list[str]:
     help=(
         "Use CHC's bias-corrected daily precipitation (CHIRPS3 climatology, 0.05 degree grid) "
         "instead of the raw model output: auto (when it covers the request: pr only; "
-        "NCEP-CFSv2, EMC-GEFSv12_CPC, GMAO-GEOS_V3 or RSMAS-CCSM4; a --bbox inside the EA, "
-        "WA or SA region; --date the run CHC holds, since it keeps no archive; and that run "
-        "current, i.e. its forecast starting on the latest Thursday), yes (error "
+        "NCEP-CFSv2, EMC-GEFSv12_CPC, GMAO-GEOS_V3 or RSMAS-CCSM4, plus ECCC-GEPS8 and "
+        "ESRL-FIMr1p1 in early archive weeks; a --bbox inside the EA, WA or SA region; and "
+        "--date the run CHC used for its current weekly issue, full leads, or for an "
+        "archived issue, 31 days from that Thursday), yes (error "
         "when it does not), no (raw only). Default: auto. With yes, --probe-latest prints "
         "the init of the current bias-corrected run for the --bbox region, or none when "
         "CHC's files are stale (their forecast must start on the latest Thursday)."
@@ -785,8 +957,9 @@ def fetch(date, model, variable, bbox, workers, source, bias_corrected, probe_la
 
     Every member at every daily lead (out to 32-45 days by model) for one init date, on
     the model's native SubX grid (1 degree; 0.5 degree for GMAO-GEOS_V3). For precipitation
-    over Africa on the latest run, CHC's bias-corrected forecast (CHIRPS3 climatology, 0.05
-    degree) is used instead when it covers the request (see --bias-corrected).
+    over Africa, CHC's bias-corrected forecast (CHIRPS3 climatology, 0.05 degree; the
+    current weekly run or an archived issue) is used instead when it covers the request
+    (see --bias-corrected).
     """
     import numpy as np
     import xarray as xr
@@ -841,11 +1014,37 @@ def fetch(date, model, variable, bbox, workers, source, bias_corrected, probe_la
                 raise DataError(str(exc) + "." + _nearest_inits(model, var, init)) from None
             raise
 
-    bc_url = _choose_bias_corrected(model, vars_wanted, init, bbox, source, bias_corrected)
-    if bc_url is not None:
-        print(f"{model} pr {init}: bias-corrected forecast from {bc_url}", file=sys.stderr)
+    plan = _choose_bias_corrected(model, vars_wanted, init, bbox, source, bias_corrected)
+    results = None
+    if plan is not None and plan[0] == "archive":
+        _, url, issue, candidates = plan
+        print(f"{model} pr {init}: archived bias-corrected {issue} issue {url}", file=sys.stderr)
+        bc, first_day = _read_bc_archive(url, bbox)
+        used = init if len(candidates) == 1 else _bc_match(model, bc, first_day, candidates, bbox)
+        if used == init:
+            print(
+                f"Archived issue: 31 days from {first_day} only; CHC records no init, so the "
+                f"run ({init}) is inferred.",
+                file=sys.stderr,
+            )
+            results = [_bc_archive_field(bc, first_day, init)]
+        else:
+            _bc_miss(
+                f"CHC's {issue} bias-corrected issue was built from the {used} run, not {init}"
+                if used is not None
+                else f"cannot tell which of the runs {', '.join(map(str, candidates))} CHC's "
+                f"{issue} bias-corrected issue was built from",
+                bias_corrected,
+            )
+            plan = None
+    elif plan is not None:
+        print(
+            f"{model} pr {init}: bias-corrected forecast ({plan[2]} issue) from {plan[1]}",
+            file=sys.stderr,
+        )
         results = [_read_bias_corrected(model, init, bbox)]
-    else:
+    bc_url = plan[1] if plan is not None else None
+    if results is None:
         with ThreadPoolExecutor(max_workers=workers) as pool:
             results = list(pool.map(load, vars_wanted))
 
@@ -923,6 +1122,13 @@ def fetch(date, model, variable, bbox, workers, source, bias_corrected, probe_la
             "CHC bias correction to the CHIRPS3-sat climatology (source attr obs_climatology), "
             "on the CHIRPS 0.05 degree grid"
         )
+        ds.attrs["bias_corrected_issue"] = plan[2]
+        if plan[0] == "archive":
+            ds.attrs["bias_corrected_init"] = (
+                "inferred: CHC's archived issue records no init; it is the raw run in the "
+                "7 days up to the issue Thursday that fits the issue's first day (when "
+                "several do, the one whose daily series matches best)"
+            )
         ds["pr"].attrs["long_name"] = f"{model} bias-corrected precipitation"
     stamp_cf_attrs(ds)
     ds = to_standard_units(ds)
