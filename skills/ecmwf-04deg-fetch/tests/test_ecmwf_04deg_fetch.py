@@ -62,6 +62,7 @@ def test_fetch_layout_units_and_history(tmp_path, fetch_mod, mocked):
         assert ds["step"].values[0] == np.timedelta64(0, "ns")
         assert ds["step"].values[-1] == np.timedelta64(13, "D")
         assert ds["time"].values == np.datetime64("2026-10-26T00:00", "ns")
+        assert ds["time"].attrs["standard_name"] == "forecast_reference_time"
         assert ds["valid_time"].values[1] == np.datetime64("2026-10-27T00:00", "ns")
         np.testing.assert_allclose(tp.isel(number=0).mean(["latitude", "longitude"]), range(14))
         np.testing.assert_allclose(tp.isel(number=2, step=0), 200.0)

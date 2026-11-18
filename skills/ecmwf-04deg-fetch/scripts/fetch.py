@@ -42,7 +42,7 @@ from weather_skills_core.standard_utils import bbox_subset
 from weather_skills_core.units import stamp_data_interval, to_standard_units
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "0.0.3"
+_SKILL_VERSION = "0.0.4"
 
 _BUCKET = "sheerwater-datalake"
 _PREFIX = "ecmwf-0_4/forecast"
@@ -295,6 +295,7 @@ def _to_forecast(raw, init, n_leads):
         attrs={"units": "mm day-1", "long_name": "Total precipitation"},
     )
     ds = xr.Dataset({"tp": tp}).assign_coords(time=init_ns)
+    ds["time"].attrs.update(standard_name="forecast_reference_time", long_name="initial time of forecast")
     return ds.assign_coords(valid_time=("step", init_ns + steps))
 
 
