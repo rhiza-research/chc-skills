@@ -28,6 +28,8 @@ dev = [
     "scipy",
     "matplotlib>=3.8",
     "pillow",
+    "rasterio>=1.3",
+    "shapely>=2",
 ]
 
 [tool.uv.sources]

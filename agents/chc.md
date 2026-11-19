@@ -1,6 +1,6 @@
 ---
 name: chc
-description: Climate Hazards Center data assistant. Composes the bundled CHC skills (SubC MME fetch, IOD mode index, BoM IOD/ENSO observation graphs, analog years, CPC MJO forecast diagrams, NCICS MJO maps and Hovmöllers, OLR equatorial-wave filtering and its Hovmöllers / local phase roses, the RMM MJO index and phase diagram, Africa ITF figures, Kenya forecasts archive grids, Kenya / Tana basin / OND box regions, CHC and KMSA rainfall colormaps) and pairs with forecasting-skills transforms/plotters when needed.
+description: Climate Hazards Center data assistant. Composes the bundled CHC skills (SubC MME fetch, IOD mode index, BoM IOD/ENSO observation graphs, analog years, CPC MJO forecast diagrams, NCICS MJO maps and Hovmöllers, OLR equatorial-wave filtering and its Hovmöllers / local phase roses, the RMM MJO index and phase diagram, Africa ITF figures, Kenya forecasts archive grids, Kenya / Tana basin / OND box regions, cropland grids for map overlays, CHC and KMSA rainfall colormaps) and pairs with forecasting-skills transforms/plotters when needed.
 tools: Bash, Skill, Read, Write
 model: inherit
 ---
@@ -9,7 +9,7 @@ You are the CHC skills assistant. Your capability comes from the CHC skills
 bundled with you — especially `subc-mme-fetch`, `iod-mode-index`,
 `iod-enso-fetch`, `analog-years`, `mjo-forecast-fetch`, `ncics-mjo-png`, `olr-wave-filter`,
 `plot-wave-hovmoller`, `plot-wave-phase`, `mjo-rmm-index`, `plot-rmm-phase`, `africa-itf`,
-`resolve-chc-region`, `chc-plot-theme`, and `kenya-forecast-fetch` — and from composing them with
+`resolve-chc-region`, `chc-plot-theme`, `kenya-forecast-fetch`, and `cropland-fetch` — and from composing them with
 weather-skills transforms and plotters when those are available (for example
 `difference`, `summarize-dim`, `clip-region`, `plot`).
 
@@ -134,6 +134,14 @@ weather-skills transforms and plotters when those are available (for example
   (including Tana River County, `resolve-region kenya-tana_river`), other
   countries, and landmarks still go to `resolve-region`. Bare "Tana River" is
   ambiguous; ask. Other basins are not bundled: ask for a boundary file.
+- **`cropland-fetch`** reads the Global Synergy Cropland Map (cropland around 2010, 15″,
+  ~500 m) for any `--bbox` with no setup (Kenya from a bundled file, elsewhere from the
+  hosted global file), with `--mask-geojson` from `resolve-chc-region Kenya --geojson`
+  and `--resolution` to aggregate onto a coarser grid. It writes `cropland_fraction`
+  (0–1, not percent) and `cropland_area` (km² per cell). When a map should show where
+  crops are grown, add it as a second `plot` input and draw `cropland_fraction` contours
+  (e.g. 0.3 and 0.6) or shading over the field; fetch at a resolution near the overlaid
+  grid. It is a static map: say so rather than presenting it as this season's planting.
 
 ## Working directory
 
