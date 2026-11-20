@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.12,<3.13"
 # dependencies = [
-#   "weather-skills-core>=0.1.1",
+#   "weather-skills-core>=0.4.0",
 #   "cfgrib",
 #   "cftime>=1.6",
 #   # eccodeslib carries the native libeccodes that cfgrib loads on macOS/Linux;
@@ -67,7 +67,7 @@ from weather_skills_core.units import (
 )
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "0.0.3"
+_SKILL_VERSION = "0.0.4"
 
 _BASE_URL = "https://opendata.dwd.de/weather/nwp/icon-eps/grib"
 _FIELD_FILE = "icon-eps_global_icosahedral_single-level_{init}_{step:03d}_{folder}.grib2.bz2"

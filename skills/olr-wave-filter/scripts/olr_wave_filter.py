@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.12,<3.13"
 # dependencies = [
-#   "weather-skills-core>=0.1.1",
+#   "weather-skills-core>=0.4.0",
 #   "aiohttp",
 #   "cftime>=1.6",
 #   "dynamical-catalog==1.0.1",
@@ -25,7 +25,7 @@ from pathlib import Path
 from weather_skills_core import DataError, Dataset, UsageError, weather_skill
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "0.0.2"
+_SKILL_VERSION = "0.0.3"
 
 OBS_SOURCE = "https://storage.googleapis.com/africa-forecasting-data/era5"
 CACHE_DIR = Path.home() / ".cache" / "chc-skills" / "era5"

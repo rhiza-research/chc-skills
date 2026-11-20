@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.12,<3.13"
 # dependencies = [
-#   "weather-skills-core>=0.1.1",
+#   "weather-skills-core>=0.4.0",
 #   "cftime>=1.6",
 #   "matplotlib>=3.8",
 #   "numpy",
@@ -21,7 +21,7 @@ from pathlib import Path
 from weather_skills_core import Dataset, UsageError, weather_skill
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "0.0.3"
+_SKILL_VERSION = "0.0.4"
 
 KINDS = ("rose", "rose-daily")
 WAVE_NAMES = ("kelvin", "er", "mjo", "mrg_td", "low")
