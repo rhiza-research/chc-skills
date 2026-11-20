@@ -295,6 +295,9 @@ def _to_forecast(raw, init, n_leads):
         attrs={"units": "mm day-1", "long_name": "Total precipitation"},
     )
     ds = xr.Dataset({"tp": tp}).assign_coords(time=init_ns)
+    ds["time"].attrs.update(
+        standard_name="forecast_reference_time", long_name="initial time of forecast"
+    )
     return ds.assign_coords(valid_time=("step", init_ns + steps))
 
 
