@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.12,<3.13"
 # dependencies = [
-#   "weather-skills-core>=0.1.1",
+#   "weather-skills-core>=0.4.0",
 # ]
 # ///
 """Download the latest CPC CLIVAR MJO phase-space forecast diagram for one model as a PNG."""
