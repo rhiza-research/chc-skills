@@ -66,6 +66,7 @@ def load(name):
 
 def write(path, text, what):
     try:
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
         Path(path).write_text(text)
     except OSError as exc:
         raise DataError(f"could not write {what} to {path}: {exc}") from None
