@@ -86,10 +86,26 @@ def test_window_days_rejected_for_fixed_colormap(mod):
 
 
 @pytest.mark.parametrize("name", ["kmsa", "chc"])
-def test_prints_theme_content(mod, capsys, name):
-    # The theme itself, not a path: plot runs in its own sandbox and cannot read this skill's files.
+def test_writes_theme_file(mod, capsys, tmp_path, monkeypatch, name):
+    # A copy in the working directory: plot runs in its own sandbox and cannot read this skill's files.
+    monkeypatch.chdir(tmp_path)
     run_skill(mod.chc_plot_theme, "--theme", name)
-    assert json.loads(capsys.readouterr().out) == json.loads(mod.THEMES[name].read_text())
+    out = tmp_path / f"{name}_theme.json"
+    assert json.loads(out.read_text()) == json.loads(mod.THEMES[name].read_text())
+    assert capsys.readouterr().out == ""
+
+
+def test_theme_output_path(mod, tmp_path):
+    out = tmp_path / "house.json"
+    run_skill(mod.chc_plot_theme, "--theme", "kmsa", "-o", str(out))
+    assert json.loads(out.read_text()) == json.loads(mod.THEMES["kmsa"].read_text())
+
+
+def test_output_rejected_for_colormap(mod, capsys, tmp_path):
+    with pytest.raises(SystemExit) as exc:
+        run_skill(mod.chc_plot_theme, "--colormap", "kmsa", "-o", str(tmp_path / "x.json"))
+    assert exc.value.code == 2
+    assert "--theme" in capsys.readouterr().err
 
 
 @pytest.mark.parametrize("args", [(), ("--theme", "kmsa", "--colormap", "kmsa")])
