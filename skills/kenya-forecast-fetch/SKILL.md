@@ -1,6 +1,6 @@
 ---
 name: kenya-forecast-fetch
-description: "Fetch a published forecast grid from the public KMSA / Rhiza Kenya forecasts archive (gs://kenya-forecasting-data) for one init date, as a weather-skills Zarr. Products: native ECMWF S2S precip (~1.5°, 101 members), its ~0.05° CHIRPS-resolution weekly downscale (101 members) and daily downscale (ensemble mean), S2S temperatures, humidity and winds, medium-range precip, and GEFS. No credentials needed."
+description: "Fetch a published forecast grid from the public KMSA / Rhiza Kenya forecasts archive (gs://kenya-forecasting-data) for one or more init dates, as a weather-skills Zarr. Products: native ECMWF S2S precip (~1.5°, 101 members), its ~0.05° CHIRPS-resolution weekly downscale (101 members) and daily downscale (ensemble mean), S2S temperatures, humidity and winds, medium-range precip, and GEFS. No credentials needed."
 license: MIT
 compatibility: Requires Python 3.12 and uv. Opens public consolidated Zarr (native S2S / GEFS / medium-range), the weekly downscaled NetCDF, or the daily downscaled GeoTIFF over HTTPS from Google Cloud Storage bucket kenya-forecasting-data; no credentials required. Older init folders may only have GRIB/NetCDF under data/ and no Zarr.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py *)
@@ -21,7 +21,7 @@ Opens one product from an init folder `gs://kenya-forecasting-data/YYYY-MM-DD/da
 ## Usage
 
 ```bash
-uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py [--dataset ID] [--date YYYY-MM-DD] [--bbox N/W/S/E] [-v VAR ...] -o OUT.zarr
+uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py [--dataset ID] [--date YYYY-MM-DD ...] [--bbox N/W/S/E] [-v VAR ...] -o OUT.zarr
 # Latest init that has the product (no download)
 uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --probe-latest [ID]
 ```
@@ -36,7 +36,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --probe-latest [ID]
 
 ### Arguments
 - `--dataset` — id from the list. Default: `precip`.
-- `--date` — init date. Default: the latest init folder that has the product.
+- `--date` — init date; repeat to stack several inits along `time` in one file. Default: the latest init folder that has the product.
 - `--bbox` — `N/W/S/E`; keeps cell centres inside the box. Omit for the full grid.
 - `--variable`, `-v` — keep only these data variables; repeatable. An unknown name exits and lists `Available:`.
 - `--probe-latest [ID]` — print the latest init date for `ID` (default: `--dataset`) and exit.
@@ -44,15 +44,16 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --probe-latest [ID]
 
 ### Output
 - Dims `(step, [number,] latitude, longitude)` with scalar `time` = init. Longitude is `[-180, 180)`.
+- With several `--date`: dims `(time, step, [number,] latitude, longitude)`, `time` = the inits, no `valid_time`. An init with fewer leads is NaN at the leads it lacks (stderr says so).
 - Precip is a rate in `mm day-1`; air temperature in `degree_Celsius`; `tcw` (total column water) stays `kg m-2`.
 - Precip, `gefs`, `daily_vars` and `medium_range_precip` steps are interval starts: `step = 0` is `[init, init + 1 period)`. Winds and `Tminmax` keep the archive steps (`Tminmax`: 6-hour min/max ending at each step, every 12 h from 6 h).
 - `precip_downscaled` and `medium_range_precip` carry `aggregation_period` (one week), so they are ready for period totals without weekly aggregation.
 
 ### Notes
 - Lead counts vary by init: recent weekly files have 4 weeks (the daily GeoTIFF 28 days), older ones 6 weeks.
-- The downscaled NetCDF and GeoTIFF are downloaded whole before `--bbox` applies (~0.7 GB peak memory for the full 101-member weekly file).
+- The downscaled NetCDF and GeoTIFF are downloaded whole before `--bbox` applies (~0.7 GB peak memory for the full 101-member weekly file). Several `--date` are read one after another and held together: the weekly downscale over Kenya adds ~0.2 GB per init (3 inits peaked at 1.7 GB).
 - Downscaled cell centres can sit half a cell off CHIRPS; align grids before a cell-by-cell comparison.
-- A `--date` folder without the product exits 1.
+- A `--date` folder without the product exits 1. With several `--date`, it is skipped and named on stderr; the fetch exits 1 only if none are found.
 
 ### Example
 ```bash

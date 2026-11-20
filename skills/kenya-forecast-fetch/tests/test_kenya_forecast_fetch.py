@@ -101,6 +101,33 @@ def test_fetch_honors_date_variable_and_bbox(tmp_path, fetch_mod, monkeypatch):
     assert float(ds.longitude.max()) <= 12
 
 
+def test_fetch_stacks_dates_and_skips_missing(tmp_path, fetch_mod, monkeypatch, capsys):
+    out = tmp_path / "kenya_multi.zarr"
+    long = make_forecast(name="tp", members=2, fill=1.0)
+    short = long.isel(step=slice(0, 2))
+    monkeypatch.setattr(fetch_mod, "_store_exists", lambda key: "2026-08-11" not in key)
+    monkeypatch.setattr(
+        fetch_mod,
+        "_open_remote",
+        lambda key: (long if "2026-08-04" in key else short).copy(deep=True),
+    )
+
+    run_skill(
+        fetch_mod.fetch,
+        "--dataset",
+        "precip",
+        *("--date", "2026-08-04", "--date", "2026-08-11", "--date", "2026-08-18"),
+        "-o",
+        str(out),
+    )
+
+    ds = xr.open_zarr(out, consolidated=True)
+    assert [str(t)[:10] for t in ds.time.values] == ["2026-08-04", "2026-08-18"]
+    assert np.isfinite(ds.tp.isel(time=0, step=-1)).all()
+    assert np.isnan(ds.tp.isel(time=1, step=-1)).all()
+    assert "Skipped init 2026-08-11" in capsys.readouterr().err
+
+
 def test_probe_latest(capsys, fetch_mod, monkeypatch):
     monkeypatch.setattr(fetch_mod, "_list_init_dates", lambda: ["2026-08-01", "2026-08-04"])
     monkeypatch.setattr(fetch_mod, "_store_exists", lambda key: "2026-08-04" in key)

@@ -332,7 +332,11 @@ def _shift_step_origin_to_zero(ds):
         "precip_downscaled_daily is the same grid as a daily GeoTIFF)."
     ),
 )
-@weather_skill.argument("--date")
+@weather_skill.argument(
+    "--date",
+    action="append",
+    help="Init date; repeat to stack several inits along time.",
+)
 @weather_skill.argument("--bbox")
 @weather_skill.argument("--variable", "-v", action="append")
 @weather_skill.argument(
@@ -363,6 +367,42 @@ def fetch(dataset, date, bbox, variable, probe_latest, **kwargs):
     if dataset not in _DATASETS:
         raise UsageError(f"unknown --dataset {dataset!r}; choose one of: {', '.join(_DATASETS)}")
 
+    if not date or len(date) == 1:
+        return _fetch_one(dataset, date[0] if date else None, bbox, variable)
+
+    import numpy as np
+    import xarray as xr
+
+    parts, skipped = [], []
+    for one in date:
+        try:
+            part = _fetch_one(dataset, one, bbox, variable)
+        except DataError as exc:
+            skipped.append(f"{one.isoformat()} ({exc})")
+            continue
+        # Label each init by the requested date; valid_time differs per init and
+        # step-to-time rebuilds it.
+        part = part.drop_vars("valid_time", errors="ignore")
+        part = part.assign_coords(time=np.datetime64(one.isoformat(), "ns")).expand_dims("time")
+        parts.append(part)
+    for line in skipped:
+        print(f"Skipped init {line}", file=sys.stderr)
+    if not parts:
+        raise DataError("none of the requested --date inits are in the archive.")
+    steps = {p.sizes.get("step") for p in parts}
+    if len(steps) > 1:
+        # A run with fewer leads gets NaN for the leads it does not have.
+        print(
+            f"Inits have different numbers of steps {sorted(steps)}; missing leads are NaN.",
+            file=sys.stderr,
+        )
+    ds = xr.concat(parts, dim="time", join="outer", combine_attrs="override")
+    ds.attrs["weather_skills_source"] = ", ".join(p.attrs["weather_skills_source"] for p in parts)
+    return ds
+
+
+def _fetch_one(dataset, date, bbox, variable):
+    """Open, subset, and standardize one init date."""
     iso = _resolve_date(date, dataset)
     key = _store_key(dataset, iso)
     print(f"Resolved init date: {iso}", file=sys.stderr)
