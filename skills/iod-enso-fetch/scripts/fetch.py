@@ -188,8 +188,15 @@ def _obs_dataset(index: str, text: str) -> xr.Dataset:
                 times.append(np.datetime64(week.date().isoformat()))
                 value = parts[3]
             else:  # BoM: week_start,week_end,value (YYYYMMDD); keep week_end
-                end = parts[1]
+                start, end = parts[0], parts[1]
                 times.append(np.datetime64(f"{end[:4]}-{end[4:6]}-{end[6:8]}"))
+                if index != "soi":  # SOI's 30-day windows overlap; weeks run Monday to Sunday
+                    bounds.append(
+                        (
+                            np.datetime64(f"{start[:4]}-{start[4:6]}-{start[6:8]}"),
+                            times[-1] + np.timedelta64(1, "D"),
+                        )
+                    )
                 value = parts[2]
             values.append(float(value))
         except (ValueError, IndexError) as exc:
@@ -213,7 +220,8 @@ def _obs_dataset(index: str, text: str) -> xr.Dataset:
     stamp_cf_coords(ds)
     ds.attrs.update(Conventions="CF-1.13", weather_skills_source="bom" if graph else "noaa-cpc")
     if bounds:
-        # Months vary in length and RONI seasons overlap: time_bounds, not data_interval.
+        # Months vary in length, RONI seasons overlap, and BoM weeks cross month edges:
+        # time_bounds, not data_interval.
         ds = ds.assign_coords(time_bounds=(("time", "nv"), np.asarray(bounds, "datetime64[ns]")))
         ds["time"].attrs["bounds"] = "time_bounds"
         return ds
