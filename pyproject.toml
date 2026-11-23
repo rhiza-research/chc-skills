@@ -21,7 +21,7 @@ dev = [
     "zarr",
     "cftime",
     "netcdf4",
-    "weather-skills-core>=0.1.1",
+    "weather-skills-core>=0.4.0",
     "fsspec",
     "aiohttp",
     "pandas",
