@@ -6,20 +6,8 @@ compatibility: "Requires Python 3.12 and uv. Reads private GCS gs://sheerwater-d
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py *)
 metadata:
   catalog-group: fetchers
-  variables:
-    - tp
-  openclaw:
-    requires:
-      env:
-        - GCLOUD_SERVICE_CREDENTIALS
-    primaryEnv: GCLOUD_SERVICE_CREDENTIALS
-    envVars:
-      - name: GCLOUD_SERVICE_CREDENTIALS
-        description: Full contents of a GCP service-account key JSON with read access to gs://sheerwater-datalake/ecmwf-0_4. Use this when the runtime can only inject secret values, not files.
-      - name: NEURAL_GCM_SERVICE_CREDENTIALS
-        description: The same key JSON under the name pbc-fetch and neuralgcm-fetch read. Used only if GCLOUD_SERVICE_CREDENTIALS is unset.
-      - name: GOOGLE_APPLICATION_CREDENTIALS
-        description: Path to a GCP service-account JSON file that can read gs://sheerwater-datalake/ecmwf-0_4. Used only if neither key JSON variable is set.
+  variables: "tp"
+  required-env: "GCLOUD_SERVICE_CREDENTIALS"
 ---
 
 # ecmwf-04deg-fetch
@@ -43,7 +31,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --probe-latest
 - `--output`, `-o` — output Zarr, overwritten.
 
 ### Output
-- Dims `(number, step, latitude, longitude)`: 101 members numbered 0–100 (0 is the control), latitude ascending (south to north), longitude `[-180, 180)`, 0.4 degree spacing. Scalar `time` is the init (00 UTC), `valid_time = time + step`.
+- Dims `(number, step, latitude, longitude)`: 101 members numbered 0–100 (0 is the control), latitude ascending (south to north), longitude `[-180, 180)`, 0.4 degree spacing. Scalar `time` is the init (00 UTC, `standard_name: forecast_reference_time`), `valid_time = time + step`.
 - `tp` is a rate in `mm day-1`: `step = N days` is the rain of the 24 h starting at init + N days (labelled at the interval start), `data_interval = 1 day`.
 - `weather_skills_source = sheerwater-ecmwf-0_4:<YYYYMMDD>`; the `license` attr marks the data as licensed and private.
 
