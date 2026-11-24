@@ -17,7 +17,7 @@ import sys
 import zipfile
 from pathlib import Path
 
-from weather_skills_core import DataError, UsageError, weather_skill
+from weather_skills_core import DataError, Dataset, UsageError, weather_skill
 from weather_skills_core.cf import stamp_cf_coords, udunits_error
 from weather_skills_core.standard_utils import polygon_from_geojson
 
@@ -86,14 +86,60 @@ def _find_tif(source: str) -> tuple[str, int, str]:
     return str(source), int(match.group(1)), source.name
 
 
-def _block_sum(a, f):
-    """Sum f x f blocks of a 2-D array whose shape divides by f; NaN where a block is all NaN."""
+def _edges(centres):
+    """Cell edges for ascending cell centres: midpoints, the outer edges half a spacing out."""
     import numpy as np
 
-    ny, nx = a.shape
-    blocks = a.reshape(ny // f, f, nx // f, f)
-    total = np.nansum(blocks, axis=(1, 3))
-    return np.where(np.isfinite(blocks).any(axis=(1, 3)), total, np.nan)
+    c = np.asarray(centres, dtype="float64")
+    mids = (c[:-1] + c[1:]) / 2
+    return np.concatenate([[c[0] - (c[1] - c[0]) / 2], mids, [c[-1] + (c[-1] - c[-2]) / 2]])
+
+
+def _write_area_geojson(path, keep, lat_edges, lon_edges, min_density, year):
+    """Write the kept output cells (rows south to north) as one polygon, for clip-region.
+
+    The outline runs along cell edges, shrunk by 1% of a cell, so clip-region --geojson (which
+    keeps every cell that overlaps a polygon by positive area) keeps exactly these cells of the
+    same grid, not their neighbours through a float-rounding sliver.
+    """
+    import json
+
+    import numpy as np
+    import shapely
+    from rasterio.features import shapes
+    from rasterio.transform import Affine
+
+    dlat, dlon = np.diff(lat_edges), np.diff(lon_edges)
+    if np.allclose(dlat, dlat[0], rtol=1e-3) and np.allclose(dlon, dlon[0], rtol=1e-3):
+        # Row 0 is the southern row: a transform with a positive y step.
+        transform = Affine(dlon[0], 0, lon_edges[0], 0, dlat[0], lat_edges[0])
+        parts = [
+            shapely.geometry.shape(geom)
+            for geom, _ in shapes(keep.astype("uint8"), mask=keep, transform=transform)
+        ]
+    else:
+        rows, cols = np.nonzero(keep)
+        parts = list(
+            shapely.box(lon_edges[cols], lat_edges[rows], lon_edges[cols + 1], lat_edges[rows + 1])
+        )
+    shrink = 0.01 * float(min(dlat.min(), dlon.min()))
+    area = shapely.union_all(parts).buffer(-shrink, join_style="mitre")
+    feature = {
+        "type": "Feature",
+        "properties": {
+            "name": f"population density >= {min_density:g} km-2",
+            "min_density": min_density,
+            "cells": int(keep.sum()),
+            "source": f"LandScan Global {year} ({_DOI})",
+        },
+        "geometry": shapely.geometry.mapping(area),
+    }
+    Path(path).write_text(json.dumps({"type": "FeatureCollection", "features": [feature]}))
+    print(
+        f"Wrote area GeoJSON: {path} ({int(keep.sum())} cells with >= {min_density:g} "
+        "people per km2)",
+        file=sys.stderr,
+    )
 
 
 @weather_skill(name="landscan-population-fetch", version=_SKILL_VERSION)
@@ -102,11 +148,14 @@ def _block_sum(a, f):
     help=(
         "A LandScan Global release: the downloaded landscan-global-YYYY-assets.zip, the "
         "landscan-global-YYYY.tif inside it, or an https:// URL of that .tif. Default: "
-        f"${_ENV}; else the bundled 2026 Kenya cut-out when --bbox lies in 6N-6S, 33-43.5E; "
+        f"${_ENV}; else the bundled 2026 Kenya cut-out when the box lies in 6N-6S, 33-43.5E; "
         "else the hosted 2026 global file, read over HTTP."
     ),
 )
-@weather_skill.argument("--bbox", required=True)
+@weather_skill.argument(
+    "--bbox",
+    help="N/W/S/E. Required unless --reference-grid is given; with it, trims that grid.",
+)
 @weather_skill.argument(
     "--resolution",
     type=float,
@@ -116,23 +165,91 @@ def _block_sum(a, f):
     ),
 )
 @weather_skill.argument(
+    "--reference-grid",
+    type=Dataset("spatial"),
+    help=(
+        "Zarr whose lat/lon cells become the output grid (e.g. the precipitation to clip), "
+        "so the population lines up cell for cell with it. Not with --resolution."
+    ),
+)
+@weather_skill.argument(
     "--mask-geojson",
     help=(
         "Boundary polygon (e.g. from resolve-chc-region Kenya --geojson): cells outside are "
-        "NaN, applied at native resolution before --resolution sums."
+        "NaN, applied at native resolution before the output grid sums."
     ),
 )
-def fetch(source_file, bbox, resolution, mask_geojson, **kwargs):
+@weather_skill.argument(
+    "--area-geojson",
+    help=(
+        "Also write the output cells with population_density >= --min-density as a polygon "
+        "GeoJSON, for clip-region --geojson."
+    ),
+)
+@weather_skill.argument(
+    "--min-density",
+    type=float,
+    default=100.0,
+    help="People per km2 a cell needs to be in --area-geojson. Default 100.",
+)
+def fetch(
+    source_file,
+    bbox,
+    resolution,
+    reference_grid,
+    mask_geojson,
+    area_geojson,
+    min_density,
+    **kwargs,
+):
     """Read LandScan Global population counts for a box as a weather-skills gridded Zarr.
 
     Writes `population` (people per cell), `population_density` (people per km2 of land)
     and `population_density_log10`, on one `time` (the release year), for overlaying on maps.
+    With --area-geojson, also writes the cells above --min-density as a polygon for
+    clip-region.
     """
     import numpy as np
     import rasterio
     import xarray as xr
     from rasterio.errors import RasterioIOError
     from rasterio.windows import Window
+    from weather_skills_core.standard_dataset import detect_spatial_dims
+    from weather_skills_core.standard_utils import ensure_normalized_longitude
+
+    if reference_grid is not None and resolution is not None:
+        raise UsageError("pass --resolution or --reference-grid, not both")
+    if reference_grid is None and bbox is None:
+        raise UsageError("pass --bbox, or --reference-grid (its grid then sets the box)")
+    if min_density <= 0:
+        raise UsageError(f"--min-density {min_density} must be above 0")
+
+    # Output grid from --reference-grid: its cells, ascending, longitudes in [-180, 180).
+    ref_lats = ref_lons = None
+    if reference_grid is not None:
+        lat_dim, lon_dim = detect_spatial_dims(reference_grid)
+        grid = xr.Dataset(
+            coords={
+                lat_dim: np.asarray(reference_grid[lat_dim].values),
+                lon_dim: np.asarray(reference_grid[lon_dim].values),
+            }
+        )
+        grid = ensure_normalized_longitude(grid, lon_dim=lon_dim)
+        ref_lats = np.sort(np.asarray(grid[lat_dim].values, dtype="float64"))
+        ref_lons = np.sort(np.asarray(grid[lon_dim].values, dtype="float64"))
+        if bbox is not None:
+            bn, bw, bs, be = bbox
+            ref_lats = ref_lats[(ref_lats >= bs) & (ref_lats <= bn)]
+            ref_lons = ref_lons[(ref_lons >= bw) & (ref_lons <= be)]
+        if ref_lats.size < 2 or ref_lons.size < 2:
+            raise UsageError("--reference-grid has fewer than 2 x 2 cells inside --bbox")
+        ref_lat_edges, ref_lon_edges = _edges(ref_lats), _edges(ref_lons)
+        bbox = (
+            float(ref_lat_edges[-1]),
+            float(ref_lon_edges[0]),
+            float(ref_lat_edges[0]),
+            float(ref_lon_edges[-1]),
+        )
 
     north, west, south, east = bbox
     source_label = ""
@@ -245,30 +362,48 @@ def fetch(source_file, bbox, resolution, mask_geojson, **kwargs):
         lon2d, lat2d = np.meshgrid(lons, lats)
         count[~shapely.contains_xy(geom, lon2d, lat2d)] = np.nan
         if not np.isfinite(count).any():
-            raise UsageError("--mask-geojson leaves no LandScan cells inside --bbox")
+            raise UsageError("--mask-geojson leaves no LandScan cells inside the box")
+    if not np.isfinite(count).any():
+        raise DataError("no land cells in the box (LandScan has no data over the sea)")
 
-    # Spherical area of each native row's cells, in km2, counted only where there is data.
+    # Spherical area of each native row's cells, in km2.
     edges = np.deg2rad(t.f + t.e * np.arange(row0, row1 + 1))
     row_area = (_EARTH_RADIUS_KM**2) * np.deg2rad(res) * np.abs(np.diff(np.sin(edges)))
-    area = np.where(np.isfinite(count), row_area[:, None], np.nan)
 
-    if factor > 1:
-        count = _block_sum(count, factor)
-        area = _block_sum(area, factor)
-        lats = lats.reshape(-1, factor).mean(axis=1)
-        lons = lons.reshape(-1, factor).mean(axis=1)
+    # Each native cell goes to the output cell holding its centre: a block of `factor` x
+    # `factor` cells, or a --reference-grid cell. -1 means no output cell. Output rows run
+    # south to north.
+    if ref_lats is not None:
+        out_lats, out_lons = ref_lats, ref_lons
+        lat_edges, lon_edges = ref_lat_edges, ref_lon_edges
+        iy = np.searchsorted(lat_edges, lats, side="right") - 1
+        ix = np.searchsorted(lon_edges, lons, side="right") - 1
+        iy[(iy < 0) | (iy >= out_lats.size)] = -1
+        ix[(ix < 0) | (ix >= out_lons.size)] = -1
+    else:
+        ny, nx = (row1 - row0) // factor, (col1 - col0) // factor
+        lat_edges = (t.f + t.e * (row0 + factor * np.arange(ny + 1)))[::-1]
+        lon_edges = t.c + res * (col0 + factor * np.arange(nx + 1))
+        out_lats = (lat_edges[:-1] + lat_edges[1:]) / 2
+        out_lons = (lon_edges[:-1] + lon_edges[1:]) / 2
+        iy = ny - 1 - np.arange(row1 - row0) // factor
+        ix = np.arange(col1 - col0) // factor
+    ok = np.isfinite(count) & (iy[:, None] >= 0) & (ix[None, :] >= 0)
+    rr, cc = np.nonzero(ok)
+    flat = iy[rr] * out_lons.size + ix[cc]
+    size, shape = out_lats.size * out_lons.size, (out_lats.size, out_lons.size)
+    area = np.bincount(flat, weights=row_area[rr], minlength=size).reshape(shape)
+    count = np.bincount(flat, weights=count[rr, cc], minlength=size).reshape(shape)
+    empty = np.bincount(flat, minlength=size).reshape(shape) == 0
+    area[empty], count[empty] = np.nan, np.nan
     with np.errstate(divide="ignore", invalid="ignore"):
         density = count / area
         log_density = np.where(density > 0, np.log10(density), np.nan)
 
-    if not np.isfinite(count).any():
-        raise DataError("no land cells in --bbox (LandScan has no data over the sea)")
-
-    order = np.argsort(lats)  # south to north
     time = np.array([np.datetime64(f"{year}-01-01", "ns")])
 
     def var(a):
-        return (("time", "latitude", "longitude"), a[order][None].astype("float32"))
+        return (("time", "latitude", "longitude"), a[None].astype("float32"))
 
     ds = xr.Dataset(
         {
@@ -276,9 +411,9 @@ def fetch(source_file, bbox, resolution, mask_geojson, **kwargs):
             "population_density": var(density),
             "population_density_log10": var(log_density),
         },
-        coords={"time": time, "latitude": lats[order], "longitude": lons},
+        coords={"time": time, "latitude": out_lats, "longitude": out_lons},
     )
-    cell = f"{factor * res:.6g} deg"
+    cell = "--reference-grid" if ref_lats is not None else f"{factor * res:.6g} deg"
     ds["population"].attrs = {
         "units": "1",
         "long_name": f"LandScan {year} ambient population per {cell} cell",
@@ -317,6 +452,14 @@ def fetch(source_file, bbox, resolution, mask_geojson, **kwargs):
         f"{total:,.0f} people",
         file=sys.stderr,
     )
+    if area_geojson:
+        keep = np.nan_to_num(density, nan=0.0) >= min_density
+        if not keep.any():
+            raise DataError(
+                f"no cell has population_density >= {min_density:g} km-2 (the highest is "
+                f"{np.nanmax(density):,.0f}); lower --min-density"
+            )
+        _write_area_geojson(area_geojson, keep, lat_edges, lon_edges, min_density, year)
     return ds
 
 

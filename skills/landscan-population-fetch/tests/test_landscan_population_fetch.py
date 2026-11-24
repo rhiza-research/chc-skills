@@ -21,9 +21,14 @@ def mod():
     return load_skill("landscan-population-fetch", "fetch")
 
 
-def write_tif(path, fill=5, sea_cols=0, west=WEST):
-    """A LandScan-like int32 tile: `fill` people per cell, the first `sea_cols` columns nodata."""
+def write_tif(path, fill=5, sea_cols=0, west=WEST, east_fill=None):
+    """A LandScan-like int32 tile: `fill` people per cell, the first `sea_cols` columns nodata.
+
+    With `east_fill`, the eastern half of the tile (from west + 1°) holds that count instead.
+    """
     data = np.full((SIZE, SIZE), fill, dtype="int32")
+    if east_fill is not None:
+        data[:, SIZE // 2 :] = east_fill
     data[:, :sea_cols] = NODATA
     with rasterio.open(
         path,
@@ -206,3 +211,109 @@ def test_unnamed_tif_is_refused(tmp_path, mod, capsys):
         )
     assert exc.value.code == 2
     assert "landscan-global-YYYY.tif" in capsys.readouterr().err
+
+
+def write_grid(path, lats, lons):
+    """A precipitation-like gridded Zarr on the given cell centres."""
+    from conftest import make_gridded, write_zarr
+
+    return write_zarr(make_gridded(n_time=1, lats=lats, lons=lons), path)
+
+
+# A 0.25° grid with centres on multiples of 0.25 (edges at x.125, like ERA5), latitude
+# descending, over the tile's 33.25-34.75°E, 4.25-5.75°N.
+OFFSET_LATS = tuple(np.arange(5.75, 4.2, -0.25))
+OFFSET_LONS = tuple(np.arange(33.25, 34.8, 0.25))
+
+
+def test_reference_grid_cells(tmp_path, mod):
+    # 5 people per 30" cell west of 34°E (~6 km-2), 200 east of it (~233 km-2).
+    src = write_tif(tmp_path / "landscan-global-2026.tif", east_fill=200)
+    ref = write_grid(tmp_path / "ref.zarr", OFFSET_LATS, OFFSET_LONS)
+    ds = fetch(mod, src, tmp_path / "o.zarr", "--reference-grid", str(ref))
+    np.testing.assert_allclose(ds["latitude"].values, sorted(OFFSET_LATS), atol=1e-5)
+    np.testing.assert_allclose(ds["longitude"].values, OFFSET_LONS, atol=1e-5)
+    row = ds["population"].isel(time=0, latitude=0).values
+    # 30 x 30 native cells per 0.25° cell; 33.875-34.125 straddles 34°E.
+    np.testing.assert_allclose(
+        row, [4500, 4500, 4500, 15 * 30 * 5 + 15 * 30 * 200, 180000, 180000, 180000]
+    )
+
+
+def test_area_geojson_clips_exactly_the_cells_above_threshold(tmp_path, mod):
+    from shapely.geometry import shape
+    from weather_skills_core.standard_utils import clip_by_geometry
+
+    src = write_tif(tmp_path / "landscan-global-2026.tif", east_fill=200)
+    ref = write_grid(tmp_path / "ref.zarr", OFFSET_LATS, OFFSET_LONS)
+    gj = tmp_path / "pa.geojson"
+    fetch(
+        mod,
+        src,
+        tmp_path / "o.zarr",
+        "--reference-grid",
+        str(ref),
+        "--area-geojson",
+        str(gj),
+        "--min-density",
+        "100",
+    )
+    feature = json.loads(gj.read_text())["features"][0]
+    assert feature["properties"]["cells"] == 7 * 4
+    # The same clip clip-region --geojson runs, on the reference grid itself.
+    with xr.open_zarr(ref) as grid:
+        clipped = clip_by_geometry(grid.load(), shape(feature["geometry"]))
+    kept = clipped["precip"].isel(time=0).notnull()
+    np.testing.assert_allclose(kept["longitude"].values, OFFSET_LONS[3:], atol=1e-5)
+    assert bool(kept.all())
+    assert kept.sizes["latitude"] == 7
+
+
+def test_area_geojson_on_resolution_grid(tmp_path, mod):
+    src = write_tif(tmp_path / "landscan-global-2026.tif", east_fill=200)
+    gj = tmp_path / "pa.geojson"
+    fetch(
+        mod,
+        src,
+        tmp_path / "o.zarr",
+        "--bbox",
+        "6/33/4/35",
+        "--resolution",
+        "0.5",
+        "--area-geojson",
+        str(gj),
+    )
+    geom = json.loads(gj.read_text())["features"][0]["geometry"]
+    xs = [x for ring in geom["coordinates"] for x, _ in ring]
+    assert min(xs) == pytest.approx(34.005, abs=1e-6)  # the 34-35°E half, shrunk 1% of a cell
+    assert max(xs) == pytest.approx(34.995, abs=1e-6)
+
+
+def test_no_cell_reaches_min_density(tmp_path, mod, capsys):
+    src = write_tif(tmp_path / "landscan-global-2026.tif")
+    with pytest.raises(SystemExit) as exc:
+        fetch(
+            mod,
+            src,
+            tmp_path / "o.zarr",
+            "--bbox",
+            "5/33/4/34",
+            "--area-geojson",
+            str(tmp_path / "pa.geojson"),
+        )
+    assert exc.value.code == 1
+    assert "lower --min-density" in capsys.readouterr().err
+
+
+def test_grid_argument_errors(tmp_path, mod, capsys):
+    src = write_tif(tmp_path / "landscan-global-2026.tif")
+    ref = write_grid(tmp_path / "ref.zarr", OFFSET_LATS, OFFSET_LONS)
+    for argv, needle in (
+        (["--reference-grid", str(ref), "--resolution", "0.25"], "not both"),
+        ([], "pass --bbox"),
+        (["--bbox", "5/33/4/34", "--min-density", "0"], "above 0"),
+    ):
+        with pytest.raises(SystemExit) as exc:
+            fetch(mod, src, tmp_path / "o.zarr", *argv)
+        assert exc.value.code == 2
+        assert needle in capsys.readouterr().err

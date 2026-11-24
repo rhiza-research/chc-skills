@@ -26,13 +26,16 @@ stderr names the source used (`bundled Kenya cut-out`, `hosted`, or the local fi
 ## Usage
 
 ```bash
-uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --bbox N/W/S/E [--resolution DEG] [--mask-geojson PATH] [--source-file ZIP_OR_TIF] -o OUT.zarr
+uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py (--bbox N/W/S/E [--resolution DEG] | --reference-grid GRID.zarr [--bbox N/W/S/E]) [--mask-geojson PATH] [--area-geojson PATH [--min-density N]] [--source-file ZIP_OR_TIF] -o OUT.zarr
 ```
 
 ### Arguments
-- `--bbox` — `N/W/S/E`, required. Kenya: `5.4141/33.9098/-4.7053/41.906` (`resolve-chc-region Kenya`).
-- `--resolution` — output cell size in degrees, a whole multiple of 30″ (1/120°): `0.05` (CHIRPS), `0.1`, `0.25`, `0.5`, `1.5`. People are summed into each cell. Cell edges sit on multiples of the resolution from 180°W / 90°N, so the box widens outward to whole cells. Default: native 1/120° (Kenya is ~1160 × 960 cells).
-- `--mask-geojson` — boundary polygon; cells whose centres fall outside become NaN, at native resolution before `--resolution` sums, so a coarse border cell holds only the people inside. Kenya: `resolve-chc-region Kenya --geojson kenya.geojson`.
+- `--bbox` — `N/W/S/E`. Required unless `--reference-grid` is given; with it, keeps the reference cells whose centres lie inside. Kenya: `5.4141/33.9098/-4.7053/41.906` (`resolve-chc-region Kenya`).
+- `--resolution` — output cell size in degrees, a whole multiple of 30″ (1/120°): `0.05` (CHIRPS), `0.1`, `0.25`, `0.5`, `1.5`. People are summed into each cell. Cell edges sit on multiples of the resolution from 180°W / 90°N, so the box widens outward to whole cells. Default: native 1/120° (Kenya is ~1215 × 960 cells).
+- `--reference-grid` — a gridded Zarr (e.g. the precipitation you will clip or compare); the output takes its exact lat/lon cells, whatever their spacing or offset (ERA5's 0.25° cells centred on whole multiples, a model's 1.5°). Each ~1 km LandScan cell goes to the reference cell holding its centre. Not with `--resolution`.
+- `--mask-geojson` — boundary polygon; cells whose centres fall outside become NaN, at native resolution before the output grid sums, so a coarse border cell holds only the people inside. Kenya: `resolve-chc-region Kenya --geojson kenya.geojson`.
+- `--area-geojson` — also write the output cells with `population_density >= --min-density` as one polygon GeoJSON (a `FeatureCollection`), for `clip-region --geojson`. See below.
+- `--min-density` — people per km² a cell needs to be in `--area-geojson`. Default `100`.
 - `--source-file` — a LandScan release: the downloaded `landscan-global-YYYY-assets.zip`, the `landscan-global-YYYY.tif` in it (keep the file name: the year is read from it), or an `https://` URL of such a `.tif`. The `-colorized.tif` is a picture, not counts, and is ignored. Default: `$LANDSCAN_FILE`, else the bundled or hosted 2026 file (above).
 - `--output`, `-o` — output Zarr.
 
@@ -44,6 +47,21 @@ Gridded `(time, latitude, longitude)`, latitude south to north, one `time` = 1 J
 - NaN over the sea and outside `--mask-geojson`; `0` where LandScan has land but no people.
 - Attrs carry the licence (CC BY 4.0), citation and DOI. LandScan must be attributed: put "Population: LandScan Global 2026, ORNL (CC BY 4.0)" on any figure or product that is shared.
 - stderr gives the grid size, cell size and total population.
+
+### Clipping a field to populated areas
+To keep precipitation (or any gridded field) only where people live, make the populated area a polygon on that field's own grid, then clip with `clip-region`:
+
+```bash
+uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --reference-grid rain.zarr --min-density 100 --area-geojson populated_100.geojson -o pop_on_rain.zarr
+# then: clip-region -i rain.zarr --geojson populated_100.geojson -o rain_populated.zarr
+```
+
+- The polygon runs along the reference grid's cell edges, shrunk by 1% of a cell, so `clip-region` keeps exactly the rain cells with at least 100 people/km² and none of their neighbours. Without `--reference-grid` the polygon follows this skill's own grid, and `clip-region` would also keep every rain cell it partly overlaps.
+- Add `--mask-geojson` (e.g. Kenya, or one county) to limit the area to a region.
+- The threshold is the user's choice, and depends on the cell size (a coarse cell averages a town with its countryside). On a 0.05° grid: `10` keeps most settled land, `100` the densely settled farming areas and towns, `1000` and up mostly urban cells. Say which was used.
+- `--keep-outside` on `clip-region` keeps the full grid with NaN outside, for a map that shows where the area is.
+- To weight by people instead of cutting at a threshold (a population-weighted average rain, people exposed to heavy rain), use `population` from `pop_on_rain.zarr`, which sits on the same cells as the rain.
+- `clip-region` keeps whole cells, so for population totals (people in a county) use this skill's `--mask-geojson`, not `clip-region` on a coarse grid: a clipped coarse grid counts boundary cells in full (around Nairobi at 0.05°, ~15% too many people).
 
 ### Overlaying on a plot
 Pass the Zarr to `plot` as another input, e.g. `-i rain.zarr=OBS -i pop.zarr=POP`, and add a trace. Density contours over a rainfall map (100 and 1000 people/km²):
@@ -64,7 +82,8 @@ Population as a map of its own: a `heatmap` of `population_density_log10` on its
 
 ### Errors
 - A missing `--source-file`, or a `.tif` / URL not named `landscan-global-YYYY.tif` — exit 2.
-- `--resolution` not a whole multiple of 1/120°, a `--bbox` reaching outside the raster, or a `--mask-geojson` that leaves no cells — exit 2.
+- `--resolution` not a whole multiple of 1/120°, both `--resolution` and `--reference-grid`, neither `--bbox` nor `--reference-grid`, a box reaching outside the raster, a `--reference-grid` with fewer than 2 × 2 cells in `--bbox`, a `--min-density` of 0 or less, or a `--mask-geojson` that leaves no cells — exit 2.
+- `--area-geojson` with no cell reaching `--min-density` (the message gives the highest density) — exit 1.
 - A zip without the count raster, an unreadable raster, or a box with only sea — exit 1.
 - Hosted file: `... is not available` (moved or not published; pass `--source-file`) or `network error reading ...` (retry; GDAL already retries 3 times) — exit 1.
 

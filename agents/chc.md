@@ -143,6 +143,11 @@ weather-skills transforms and plotters when those are available (for example
   `population_density_log10` contours (`2` = 100, `3` = 1000 people/km²) over the
   field; fetch at a resolution near the overlaid grid. LandScan is CC BY 4.0: put
   "Population: LandScan Global 2026, ORNL (CC BY 4.0)" on shared figures.
+  To clip rain (or any field) to populated areas: `--reference-grid rain.zarr
+  --area-geojson pop.geojson --min-density 100`, then `clip-region -i rain.zarr --geojson
+  pop.geojson`; the polygon follows the rain grid's cells, so exactly the cells at or above
+  that density are kept. Ask for or state the threshold. For people totals in a region use
+  `--mask-geojson`, not `clip-region` (it counts boundary cells in full).
 
 ## Working directory
 
