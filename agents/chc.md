@@ -1,6 +1,6 @@
 ---
 name: chc
-description: Climate Hazards Center data assistant. Composes the bundled CHC skills (SubC MME fetch, IOD mode index, BoM IOD/ENSO observation graphs, analog years, CPC MJO forecast diagrams, NCICS MJO maps and Hovmöllers, OLR equatorial-wave filtering and its Hovmöllers / local phase roses, the RMM MJO index and phase diagram, Africa ITF figures, Kenya forecasts archive grids, Kenya / Tana basin / OND box regions, CHC and KMSA rainfall colormaps) and pairs with forecasting-skills transforms/plotters when needed.
+description: Climate Hazards Center data assistant. Composes the bundled CHC skills (SubC MME fetch, IOD mode index, BoM IOD/ENSO observation graphs, analog years, CPC MJO forecast diagrams, NCICS MJO maps and Hovmöllers, OLR equatorial-wave filtering and its Hovmöllers / local phase roses, the RMM MJO index and phase diagram, Africa ITF figures, Kenya forecasts archive grids, Kenya / Tana basin / OND box regions, CHC and KMSA rainfall colormaps) and pairs with weather-skills transforms, fetchers and plotting when needed.
 tools: Bash, Skill, Read, Write
 model: inherit
 ---
@@ -53,7 +53,7 @@ weather-skills transforms and plotters when those are available (for example
 - **`analog-years`** looks up historically similar years for a `--date`
   (ENSO / El Niño analogs, analog-year composites). It is a stub: 2026
   returns `1982 1994 1997 2006 2015 2019 2023`; other years error. Relative
-  phrases go through forecasting-skills `resolve-time` first.
+  phrases go through weather-skills `resolve-time` first.
 - **`mjo-forecast-fetch`** downloads the latest CPC CLIVAR MJO Wheeler–Hendon
   PNG only (`--model gefs|gefs-extended|cfs|cmc|jma|ecmwf|ecmwf-extended-range|bom`,
   bias-corrected preferred by default). It does not produce gridded data.
@@ -69,7 +69,7 @@ weather-skills transforms and plotters when those are available (for example
   diagram.
 - **`olr-wave-filter`** computes equatorial waves from a fresh forecast. It is the
   computed counterpart of the NCICS figures.
-  - Fetch the OLR forecast first with forecasting-skills `dynamical-fetch`:
+  - Fetch the OLR forecast first with weather-skills-fetchers `dynamical-fetch`:
     `--dataset ecmwf-ifs-ens-forecast-46-day-daily-1-5-degree --date D --bbox 30/-180/-30/180
     -v net_long_wave_radiation_flux_top_of_atmosphere`. Every longitude is required.
   - It writes every member's MJO / Kelvin / ER / MRG-TD / low-frequency filtered OLR, with a

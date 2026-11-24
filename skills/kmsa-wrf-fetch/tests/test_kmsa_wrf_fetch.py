@@ -80,6 +80,45 @@ def test_daily_product_variable_and_bbox(tmp_path, fetch_mod):
         assert ds["longitude"].values.tolist() == [36.5, 37.0]
 
 
+def test_full_product_passes_wrf_fields_through(tmp_path, fetch_mod):
+    src = write_run(tmp_path / "src.nc", "2026-10-26T03")
+    with xr.open_dataset(src, decode_times=False) as ds:
+        full = ds.load()
+    full["u10"] = full["t2"] * 0 + 4.0
+    full["u"] = (("time", "lev_2", "lat", "lon"), np.full((5, 3, len(LATS), len(LONS)), 7.0))
+    (tmp_path / "full_wrf").mkdir()
+    full.to_netcdf(tmp_path / "full_wrf/wrf_full_20261026.nc")
+    out = tmp_path / "wrf.zarr"
+
+    run_skill(
+        fetch_mod.fetch,
+        *("--root", str(tmp_path), "--product", "full", "--date", "2026-10-26"),
+        *("-v", "tp", "-v", "u10", "-v", "u", "-o", str(out)),
+    )
+
+    with xr.open_zarr(out, consolidated=True) as ds:
+        assert set(ds.data_vars) == {"tp", "u10", "u"}
+        assert ds.sizes["step"] == 4
+        np.testing.assert_allclose(ds["tp"].values, 6.0, rtol=1e-5)
+        assert ds["u10"].dims == ("step", "lev", "latitude", "longitude")
+        np.testing.assert_allclose(ds["u10"].values, 4.0)
+        assert ds["u"].dims == ("step", "lev_2", "latitude", "longitude")
+        assert ds.attrs["weather_skills_source"] == "kmsa-wrf:full_wrf/wrf_full_20261026.nc"
+
+
+def test_refuses_unknown_variable(tmp_path, fetch_mod, capsys):
+    write_run(tmp_path / "7_day/20261013_to_20261020_fcst.nc", "2026-10-13T06")
+
+    with pytest.raises(SystemExit) as exc:
+        run_skill(
+            fetch_mod.fetch,
+            *("--root", str(tmp_path), "--date", "2026-10-13", "-v", "u10"),
+            *("-o", str(tmp_path / "x.zarr")),
+        )
+    assert exc.value.code != 0
+    assert "no variable u10 in the 7day product" in capsys.readouterr().err
+
+
 def test_probe_latest(tmp_path, fetch_mod, capsys):
     for day in ("20261012", "20261014", "20261013"):
         write_run(

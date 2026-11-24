@@ -1,7 +1,7 @@
 # /// script
 # requires-python = ">=3.12,<3.13"
 # dependencies = [
-#   "weather-skills-core>=0.1.1",
+#   "weather-skills-core>=0.4.0",
 #   "cftime>=1.6",
 #   "gcsfs",
 #   "google-auth",
@@ -24,7 +24,7 @@
 #   start of its 24 h interval; `data_interval = 1 day`. Scalar `time` is the init (from
 #   the object name), `valid_time = time + step`.
 # - Coordinates: float32 lat/lon -> float64 rounded to 4 decimals (0.4000001 -> 0.4);
-#   int16 `number` -> int64. Latitude stays descending, longitude stays [-180, 180).
+#   int16 `number` -> int64. Latitude is written ascending by core, longitude stays [-180, 180).
 # - standard_name `lwe_precipitation_rate` and long_name `Total precipitation` on `tp`.
 
 import json
@@ -42,7 +42,7 @@ from weather_skills_core.standard_utils import bbox_subset
 from weather_skills_core.units import stamp_data_interval, to_standard_units
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "0.0.2"
+_SKILL_VERSION = "0.0.6"
 
 _BUCKET = "sheerwater-datalake"
 _PREFIX = "ecmwf-0_4/forecast"
@@ -295,6 +295,9 @@ def _to_forecast(raw, init, n_leads):
         attrs={"units": "mm day-1", "long_name": "Total precipitation"},
     )
     ds = xr.Dataset({"tp": tp}).assign_coords(time=init_ns)
+    ds["time"].attrs.update(
+        standard_name="forecast_reference_time", long_name="initial time of forecast"
+    )
     return ds.assign_coords(valid_time=("step", init_ns + steps))
 
 

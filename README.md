@@ -14,7 +14,7 @@ position figures, and the DWD ICON-EPS ensemble regridded from its triangular gr
 | Skill | Role |
 | --- | --- |
 | [`subc-mme-fetch`](skills/subc-mme-fetch/) | Fetch one SubC global MME outlook (`--outlook 7d\|15d\|30d`; mean + anomaly per variable) as a forecast Zarr. `--probe-latest VAR` gives the latest init and warns when its window has already ended |
-| [`kmsa-wrf-fetch`](skills/kmsa-wrf-fetch/) | Read one KMSA WRF run (`--product 7day` or `daily`; 3-hourly, ~0.036° Kenya grid) as a forecast Zarr of `tp` rates and `t2m`, from the private `gs://sheerwater-datalake/kmsa-wrf` mirror. **Private use only: requires `GCLOUD_SERVICE_CREDENTIALS` with read access to that bucket.** |
+| [`kmsa-wrf-fetch`](skills/kmsa-wrf-fetch/) | Read one KMSA WRF run (`--product 7day` or `daily`; 3-hourly, ~0.036° Kenya grid) as a forecast Zarr of `tp` rates and `t2m`, or every WRF field with `--product full`, from the private `gs://sheerwater-datalake/kmsa-wrf` mirror. **Private use only: requires `GCLOUD_SERVICE_CREDENTIALS` with read access to that bucket.** |
 | [`iod-mode-index`](skills/iod-mode-index/) | Dipole Mode Index (West − East) plus west/east box means from a pre-computed temperature anomaly |
 | [`iod-enso-fetch`](skills/iod-enso-fetch/) | Fetch BoM IOD / ENSO observation or ACCESS-S forecast PNGs, or official index values as a Zarr (`--format data` / `-o *.zarr`) |
 | [`analog-years`](skills/analog-years/) | Analog years for a `--date` (stub: 2026 → 1982, 1994, 1997, 2006, 2015, 2019, 2023; other years error) |
@@ -27,7 +27,7 @@ position figures, and the DWD ICON-EPS ensemble regridded from its triangular gr
 | [`plot-rmm-phase`](skills/plot-rmm-phase/) | RMM phase-space diagram of `mjo-rmm-index` output: members on chosen days, ensemble-mean track, observed and BoM tracks |
 | [`africa-itf`](skills/africa-itf/) | Fetch the latest NOAA/CPC Africa ITF / ITCZ figure: the continental position map (`--location africa`, default) or the west/east latitude-vs-dekad time series (`west-africa`, `east-africa`, not maps; CPC uses both terms) |
 | [`kenya-forecast-fetch`](skills/kenya-forecast-fetch/) | Fetch a published KMSA / Rhiza Kenya forecast grid for one init: native ECMWF S2S precip (~1.5°, 101 members), its ~0.05° weekly and daily downscales, S2S temperatures, humidity and winds, medium-range precip, or GEFS. No credentials |
-| [`icon-eps-fetch`](skills/icon-eps-fetch/) | Fetch the newest DWD ICON-EPS global run (40 members, to 7.5 days: precip, 2 m temperature/dewpoint/humidity, 10 m winds and gusts, cloud cover, surface pressure), regridded from ICON's triangular grid to a regular lat/lon grid. No credentials; DWD keeps only ~24 h of runs |
+| [`icon-eps-fetch`](skills/icon-eps-fetch/) | Fetch a DWD ICON-EPS global run (40 members, to 7.5 days: precip, 2 m temperature/dewpoint/humidity, 10 m winds and gusts, cloud cover, surface pressure), regridded from ICON's triangular grid to a regular lat/lon grid. No credentials; past 00 UTC runs over Africa come from the `gs://africa-forecasting-data` archive, the newest from DWD (which keeps only ~24 h) |
 | [`ecmwf-04deg-fetch`](skills/ecmwf-04deg-fetch/) | Fetch one CHC-standardized ECMWF 0.4° daily precip ensemble (101 members, 46 lead days) from the private `gs://sheerwater-datalake/ecmwf-0_4/forecast/` archive, reading only the `--bbox` chunks (zarr, concurrently). Needs Google Cloud credentials; licensed data, keep it private |
 | [`resolve-chc-region`](skills/resolve-chc-region/) | Bbox and boundary polygon for the Tana River basin, Kenya's KNSDI national outline (plus county lines), the Kenya OND briefing box, and East Africa clipped at 15°S, in the same shape as `resolve-region` |
 | [`chc-plot-theme`](skills/chc-plot-theme/) | KMSA and CHC rainfall palettes for the `plot` skill: a `.libsonnet` library to import in a spec (`ws.classBar(chc.kmsa, 'mm')`), or one palette as JSON with `--colormap` (`kmsa`, `chc_precip_<window>`, `chc_precip_anom_<window>`; `--for ZARR` picks the window), plus the KMSA-style Kenya map example |
@@ -67,7 +67,7 @@ uv run skills/ncics-mjo-png/scripts/fetch.py --product hovmoller -o /tmp/olr_hov
 uv run skills/ncics-mjo-png/scripts/fetch.py --date 2024-12-30 -o /tmp/olr_africa_20241230.png
 
 # Equatorial waves and the RMM index from one ECMWF 46-day forecast. Fetch the inputs with
-# forecasting-skills dynamical-fetch (--dataset ecmwf-ifs-ens-forecast-46-day-daily-1-5-degree
+# weather-skills-fetchers dynamical-fetch (--dataset ecmwf-ifs-ens-forecast-46-day-daily-1-5-degree
 # --date 2026-10-10): OLR (-v net_long_wave_radiation_flux_top_of_atmosphere --bbox 30/-180/-30/180)
 # and zonal wind (-v u --bbox 15/-180/-15/180)
 uv run skills/olr-wave-filter/scripts/olr_wave_filter.py -i /tmp/olr.zarr -o /tmp/waves.zarr
@@ -110,7 +110,7 @@ claude plugin install rhiza-chc@chc-skills
 ## Layout
 
 Same packaging model as
-[`forecasting-skills`](https://github.com/rhiza-research/forecasting-skills):
+[`weather-skills`](https://github.com/weather-skills/weather-skills):
 canonical skills under `skills/<name>/`, Claude plugin via `.claude-plugin/` +
 `agents/`, CLI via `skills-runner`.
 
