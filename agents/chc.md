@@ -142,6 +142,10 @@ weather-skills transforms and plotters when those are available (for example
   crops are grown, add it as a second `plot` input and draw `cropland_fraction` contours
   (e.g. 0.3 and 0.6) or shading over the field; fetch at a resolution near the overlaid
   grid. It is a static map: say so rather than presenting it as this season's planting.
+  To clip rain (or any field) to agricultural areas: `--reference-grid rain.zarr
+  --area-geojson crop.geojson --min-fraction 0.3`, then `clip-region -i rain.zarr --geojson
+  crop.geojson`; the polygon follows the rain grid's cells, so exactly the cells with at
+  least that much cropland are kept. Ask for or state the threshold.
 
 ## Working directory
 
