@@ -67,7 +67,7 @@ uv run skills/ncics-mjo-png/scripts/fetch.py --product hovmoller -o /tmp/olr_hov
 uv run skills/ncics-mjo-png/scripts/fetch.py --date 2024-12-30 -o /tmp/olr_africa_20241230.png
 
 # Equatorial waves and the RMM index from one ECMWF 46-day forecast. Fetch the inputs with
-# forecasting-skills dynamical-fetch (--dataset ecmwf-ifs-ens-forecast-46-day-daily-1-5-degree
+# weather-skills-fetchers dynamical-fetch (--dataset ecmwf-ifs-ens-forecast-46-day-daily-1-5-degree
 # --date 2026-10-10): OLR (-v net_long_wave_radiation_flux_top_of_atmosphere --bbox 30/-180/-30/180)
 # and zonal wind (-v u --bbox 15/-180/-15/180)
 uv run skills/olr-wave-filter/scripts/olr_wave_filter.py -i /tmp/olr.zarr -o /tmp/waves.zarr
@@ -107,7 +107,7 @@ claude plugin install rhiza-chc@chc-skills
 ## Layout
 
 Same packaging model as
-[`forecasting-skills`](https://github.com/rhiza-research/forecasting-skills):
+[`weather-skills`](https://github.com/weather-skills/weather-skills):
 canonical skills under `skills/<name>/`, Claude plugin via `.claude-plugin/` +
 `agents/`, CLI via `skills-runner`.
 
