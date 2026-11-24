@@ -109,6 +109,26 @@ def test_broadcast_guard(mod, tmp_path):
     assert exc.value.code == 2
 
 
+def _total(tmp_path, name, fill, period):
+    ds = make_gridded(n_time=2, fill=fill)
+    ds["precip"].attrs = {"units": "mm", "aggregation_period": period}
+    return str(write_zarr(ds, tmp_path / f"{name}.zarr"))
+
+
+def test_add_totals_same_period(mod, tmp_path):
+    a, b = _total(tmp_path, "a", 1.0, "1 day"), _total(tmp_path, "b", 2.0, "24 hour")
+    res = _run(mod, tmp_path / "o.zarr", "-i", a, "-i", b, "--op", "add")
+    np.testing.assert_allclose(res["precip"].values, 3.0)
+    assert res["precip"].attrs["aggregation_period"] == "1 day"
+
+
+def test_add_totals_different_periods(mod, tmp_path):
+    a, b = _total(tmp_path, "a", 1.0, "1 day"), _total(tmp_path, "b", 2.0, "7 day")
+    with pytest.raises(SystemExit) as exc:
+        _run(mod, tmp_path / "o.zarr", "-i", a, "-i", b, "--op", "add")
+    assert exc.value.code == 2
+
+
 def _prob(tmp_path, name, fill):
     ds = make_forecast(n_step=2, fill=fill)
     ds["tp"].attrs = {"units": "%", "long_name": "Probability"}
