@@ -293,8 +293,9 @@ def _archive_open(day: str, folder: str):
         raise _archive_error(exc) from None
 
 
-def _archive_newest(folder: str) -> str | None:
-    """Newest init date (YYYY-MM-DD) with an archived store for ``folder``."""
+def _archive_days(folder: str) -> list[str]:
+    """Init dates (YYYY-MM-DD, newest first) with an archived store for ``folder``, among
+    the newest ``_ARCHIVE_PROBE_DAYS`` date folders."""
     try:
         fs = _archive_fs()
         entries = fs.ls(f"{_ARCHIVE_BUCKET}/data/", detail=False)
@@ -305,13 +306,25 @@ def _archive_newest(folder: str) -> str | None:
                 if re.fullmatch(r"\d{4}-\d{2}-\d{2}", d)
             ),
             reverse=True,
-        )
-        for day in days[:_ARCHIVE_PROBE_DAYS]:
-            if _archive_has(fs, day, folder):
-                return day
+        )[:_ARCHIVE_PROBE_DAYS]
+        with ThreadPoolExecutor(max_workers=16) as pool:
+            held = list(pool.map(lambda day: _archive_has(fs, day, folder), days))
     except Exception as exc:  # noqa: BLE001 - as in _archive_open
         raise _archive_error(exc) from None
-    return None
+    return [day for day, ok in zip(days, held, strict=True) if ok]
+
+
+def _archive_summary(folder: str, days: list[str]) -> str:
+    """One line naming the archived runs of ``folder``: first to last date and the dates
+    missing between them."""
+    if not days:
+        return f"the archive holds no {folder} store in its newest {_ARCHIVE_PROBE_DAYS} dates"
+    import pandas as pd
+
+    span = pd.date_range(days[-1], days[0]).strftime("%Y-%m-%d")
+    missing = sorted(set(span) - set(days))
+    gaps = f" (missing {', '.join(missing)})" if missing else ""
+    return f"archived {folder} runs: {days[-1]} to {days[0]}{gaps}"
 
 
 def _step_hours(ds) -> list[int]:
@@ -350,7 +363,8 @@ def _archive_plan(names, day, run, bbox, resolution, regrid, lead, interval):
         folder = VARIABLES[name]
         ds = _archive_open(day, folder)
         if ds is None:
-            return None, (DataError, f"the archive has no {folder} store for {day}")
+            summary = _archive_summary(folder, _archive_days(folder))
+            return None, (DataError, f"the archive has no {folder} store for {day}; {summary}")
         have = set(_step_hours(ds))
         missing = [s for s in wanted if s not in have]
         if missing:
@@ -663,11 +677,12 @@ def fetch(
 
     if probe_latest is not None:
         if source == "archive":
-            day = _archive_newest(folder0)
-            if day is None:
-                raise DataError(f"the archive holds no {folder0} store.")
-            print(f"Latest archived run: {day.replace('-', '')} 00 UTC", file=sys.stderr)
-            print(day)
+            days = _archive_days(folder0)
+            if not days:
+                raise DataError(f"{_archive_summary(folder0, days)}.")
+            print(f"Latest archived run: {days[0].replace('-', '')} 00 UTC", file=sys.stderr)
+            print(f"{_archive_summary(folder0, days).capitalize()}.", file=sys.stderr)
+            print(days[0])
             return
         newest = max(_dwd_runs(run, folder0))
         print(f"Latest run: {newest[:8]} {newest[8:]} UTC", file=sys.stderr)
@@ -686,10 +701,10 @@ def fetch(
     elif source == "archive":
         if run != 0:
             raise UsageError("the archive holds only 00 UTC runs; use --run 0.")
-        day = _archive_newest(folder0)
-        if day is None:
-            raise DataError(f"the archive holds no {folder0} store.")
-        init = day.replace("-", "") + "00"
+        days = _archive_days(folder0)
+        if not days:
+            raise DataError(f"{_archive_summary(folder0, days)}.")
+        init = days[0].replace("-", "") + "00"
     else:
         published = _dwd_runs(run, folder0)
         init = max(published)

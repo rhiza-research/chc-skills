@@ -56,7 +56,7 @@ def mocked(fetch_mod, grid, monkeypatch):
     monkeypatch.setattr(fetch_mod, "_fetch_field", fake_field)
     # Empty archive unless a test provides stores.
     monkeypatch.setattr(fetch_mod, "_archive_open", lambda day, folder: None)
-    monkeypatch.setattr(fetch_mod, "_archive_newest", lambda folder: None)
+    monkeypatch.setattr(fetch_mod, "_archive_days", lambda folder: [])
     return requested
 
 
@@ -99,7 +99,9 @@ def archive(fetch_mod, mocked, monkeypatch):
         return archive_store(day, folder, steps)
 
     monkeypatch.setattr(fetch_mod, "_archive_open", fake_open)
-    monkeypatch.setattr(fetch_mod, "_archive_newest", lambda folder: "2026-10-21")
+    monkeypatch.setattr(
+        fetch_mod, "_archive_days", lambda folder: ["2026-10-21", "2026-10-20", "2026-10-18"]
+    )
     return opened
 
 
@@ -250,7 +252,7 @@ def test_source_dwd_never_reads_the_archive(tmp_path, fetch_mod, mocked, archive
     assert archive == [] and mocked
 
 
-def test_source_archive_missing_date_exits_1(tmp_path, fetch_mod, mocked, archive):
+def test_source_archive_missing_date_exits_1(tmp_path, fetch_mod, mocked, archive, capsys):
     with pytest.raises(SystemExit) as exc:
         run_skill(
             fetch_mod.fetch,
@@ -259,6 +261,8 @@ def test_source_archive_missing_date_exits_1(tmp_path, fetch_mod, mocked, archiv
         )
     assert exc.value.code == 1
     assert mocked == []
+    err = capsys.readouterr().err
+    assert "archived tot_prec runs: 2026-10-18 to 2026-10-21 (missing 2026-10-19)" in err
 
 
 def test_source_archive_rejects_other_runs_and_global(tmp_path, fetch_mod, mocked, archive):
@@ -284,4 +288,6 @@ def test_old_date_outside_archive_box_names_both_sources(
 
 def test_probe_latest_archive(fetch_mod, mocked, archive, capsys):
     run_skill(fetch_mod.fetch, "--probe-latest", "--source", "archive")
-    assert capsys.readouterr().out.strip() == "2026-10-21"
+    out, err = capsys.readouterr()
+    assert out.strip() == "2026-10-21"
+    assert "Archived tot_prec runs: 2026-10-18 to 2026-10-21 (missing 2026-10-19)" in err

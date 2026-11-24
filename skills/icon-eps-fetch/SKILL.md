@@ -17,7 +17,7 @@ Writes one ICON-EPS run as a weather-skills standard dataset Zarr, every member 
 
 ```bash
 uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py [--date YYYY-MM-DD] [--source auto|archive|dwd] [--run 0|6|12|18] [--bbox N/W/S/E] [-v VAR ...] -o OUT.zarr
-# Newest init date of the run on DWD (no download); add --source archive for the newest archived run
+# Newest init date of the run on DWD (no download); add --source archive for the newest archived run and the list of archived runs
 uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --probe-latest
 ```
 
@@ -32,7 +32,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --probe-latest
 - `--target-resolution` — output grid spacing in degrees. Default `0.25` (the native grid is ~20 km).
 - `--regrid` — `linear` (default; barycentric over the triangles between cell centres) or `nearest` (each output point takes the nearest cell's value).
 - `--workers` — parallel downloads. Default `4`; lower it if DWD throttles.
-- `--probe-latest [IDENT]` — print the newest init date of `--run` on DWD on stdout and exit (with `--source archive`, the newest archived 00 UTC run of the first `-v`); stderr names the run. `IDENT` is ignored.
+- `--probe-latest [IDENT]` — print the newest init date of `--run` on DWD on stdout and exit (with `--source archive`, the newest archived 00 UTC run of the first `-v`, and stderr lists the archived runs among the newest 60 dates: first to last date and the dates missing between them); stderr names the run. `IDENT` is ignored.
 - `--output`, `-o` — output Zarr, overwritten.
 
 ### Output
@@ -42,7 +42,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --probe-latest
 - `data_interval` is stamped for even leads; uneven leads (6-hourly to 120 h, then 12-hourly) get `step_bounds`. `weather_skills_source = dwd-icon-eps:<HH>/<YYYYMMDDHH>` from either source; `retrieved_from` names the archive store(s) or the DWD folder the run was read from. `license = CC BY 4.0; source: Deutscher Wetterdienst`.
 
 ### Archive
-- `gs://africa-forecasting-data/data/<YYYY-MM-DD>/ICON_eps_<dwd folder>_<YYYY-MM-DD>.zarr`, written daily by the ECMWF-S2S4AFRICA pipeline from DWD open data: 00 UTC runs only, linear onto 0.25° over Africa (N/W/S/E `22.5/-21/-34.5/55.5`), 24-hourly `tot_prec` (stored as `tp`, written as `precip`) and 6-hourly instantaneous fields. It holds `tot_prec` daily from 2026-10-28; other variables are there only on dates the pipeline downloaded them.
+- `gs://africa-forecasting-data/data/<YYYY-MM-DD>/ICON_eps_<dwd folder>_<YYYY-MM-DD>.zarr`, written daily by the ECMWF-S2S4AFRICA pipeline from DWD open data: 00 UTC runs only, linear onto 0.25° over Africa (N/W/S/E `22.5/-21/-34.5/55.5`), 24-hourly `tot_prec` (stored as `tp`, written as `precip`) and 6-hourly instantaneous fields. It holds `tot_prec` from 2026-10-28, with a few days missing; run `--probe-latest --source archive` before fetching past dates to see which are there. Other variables are there only on dates the pipeline downloaded them.
 - `auto` reads the archive only when all of these hold: `--run 0`, `--regrid linear`, `--target-resolution 0.25`, a `--bbox` inside the archive box, a store for every requested variable on that date, and every requested lead that DWD publishes present in the store (so `-v precip --step-interval 6h` goes to DWD). Otherwise it downloads from DWD, and stderr says why the archive was not used.
 - An archived run gives the same output as the same request downloaded from DWD. A `--bbox` edge off the 0.25° lattice snaps inward to the archive points.
 - Reading the archive takes seconds per variable, against the ~400 MB of global files a DWD week of `precip` downloads.
@@ -54,7 +54,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --probe-latest
 - Credit DWD when publishing figures or data (CC BY 4.0).
 
 ### Errors
-- Exit 1 — the init is neither on DWD (older than ~24 h, or not yet published) nor readable from the archive; the message gives DWD's newest run and why the archive could not serve it (for an old date: pass a `--bbox` inside Africa with `--run 0`, or the date was never archived). With `--source archive`: no store for that date or variable, or the store lacks requested leads. A run still uploading has too few leads for the request. A transport failure after retries, from DWD (retry later or lower `--workers`) or from the bucket (retry later or use `--source dwd`).
+- Exit 1 — the init is neither on DWD (older than ~24 h, or not yet published) nor readable from the archive; the message gives DWD's newest run and why the archive could not serve it (for an old date: pass a `--bbox` inside Africa with `--run 0`, or the date was never archived). With `--source archive`: no store for that date or variable (the message lists the archived runs of that variable), or the store lacks requested leads. A run still uploading has too few leads for the request. A transport failure after retries, from DWD (retry later or lower `--workers`) or from the bucket (retry later or use `--source dwd`).
 - Exit 2 — unknown `--variable`, a malformed `--max-lead` / `--step-interval`, a non-positive `--target-resolution`, or a `--bbox` that holds no output points. With `--source archive`: `--run` other than 0, `--regrid nearest`, a `--target-resolution` other than 0.25, or no `--bbox` or one outside the archive box.
 
 ### Example
