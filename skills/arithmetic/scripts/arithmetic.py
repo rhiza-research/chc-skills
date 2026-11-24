@@ -138,7 +138,8 @@ def arithmetic(ds, op, constant, constant_first, variable, units, **kwargs):
                 for f in fields
                 if f.attrs.get(AGGREGATION_PERIOD_ATTR)
             }
-            if len({ureg.Quantity(p) for p in periods}) > 1 and any(
+            # Compare as seconds: this registry's Quantities hold arrays, which are unhashable.
+            if len({float(ureg.Quantity(p).m_as("s")) for p in periods}) > 1 and any(
                 looks_like_precip_total(f) for f in periods.values()
             ):
                 raise UsageError(
