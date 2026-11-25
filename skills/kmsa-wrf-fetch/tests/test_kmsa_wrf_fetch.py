@@ -64,6 +64,17 @@ def test_7day_run_becomes_rates_and_celsius(tmp_path, fetch_mod):
     assert load_history(out)[-1]["skill"] == "kmsa-wrf-fetch"
 
 
+def test_stale_2026_11_03_stamps_move_to_file_date(tmp_path, fetch_mod):
+    write_run(tmp_path / "7_day/20261123_to_20261130_fcst.nc", "2026-11-03T03")
+    out = tmp_path / "wrf.zarr"
+
+    run_skill(fetch_mod.fetch, "--root", str(tmp_path), "--date", "2026-11-23", "-o", str(out))
+
+    with xr.open_zarr(out, consolidated=True) as ds:
+        assert ds["time"].values == np.datetime64("2026-11-23T03:00", "ns")
+        assert ds["step"].values[-1] == np.timedelta64(9, "h")
+
+
 def test_daily_product_variable_and_bbox(tmp_path, fetch_mod):
     write_run(tmp_path / "Daily_Data/20261014_to_20261015_fcst.nc", "2026-10-14T03")
     out = tmp_path / "wrf.zarr"
