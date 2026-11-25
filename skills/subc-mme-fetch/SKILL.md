@@ -2,7 +2,7 @@
 name: subc-mme-fetch
 description: "Fetch one CHC SubC multi-model-ensemble outlook (7-, 15-, or 30-day) for an init date as a weather-skills forecast Zarr: the ensemble mean and anomaly of precipitation, near-surface air, max, min, dewpoint, or surface temperature on a global 1° grid, optionally cut to a bbox. Use when a task needs a CHC SubC outlook map or its anomalies for one window."
 license: MIT
-compatibility: Requires Python 3.12 and uv. Fetches the public GCS mirror first (gs://sheerwater-public-datalake/chc-mirror), then falls back to data.chc.ucsb.edu. No credentials required.
+compatibility: Requires Python 3.12 and uv. Reads data.chc.ucsb.edu, with the public GCS mirror (gs://sheerwater-public-datalake/chc-mirror) as a fallback for older inits. No credentials required.
 allowed-tools: Bash(uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py *)
 metadata:
   catalog-group: fetchers
@@ -41,6 +41,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py --outlook 7d|15d|30d --probe-latest 
 
 ### Notes
 - SubC publishes irregularly: the latest init can be weeks old with its window already over. Probe first and check the window covers the period you need.
+- An init or variable that is not published fails within seconds and lists the inits published either side. Not every init has every variable (recent inits can lack `tdps`); `--probe-latest VAR` finds the newest init that has `VAR`.
 - `pr` is already a total; do not convert it to totals again.
 - To mask to a country or basin, clip with its polygon after fetching.
 
@@ -52,4 +53,4 @@ Writes the 7-day precipitation total and anomaly from the 2025-12-01 init over K
 
 ## Details
 
-Archive layout and the mirror / origin fallback: [references/REFERENCE.md](references/REFERENCE.md).
+Archive layout and the origin / mirror fallback: [references/REFERENCE.md](references/REFERENCE.md).

@@ -1,19 +1,12 @@
 # SubC MME global archive
 
-Primary source: public GCS mirror of the CHC SubC tree (faster/more reliable
-than the origin server):
+Source: the CHC SubC archive, `https://data.chc.ucsb.edu/experimental/SubC/`.
 
-`gs://sheerwater-public-datalake/chc-mirror/experimental/SubC/`
-
-HTTPS:
-
+Fallback for a file the origin does not serve: the public GCS mirror of the
+older flat archive,
 `https://storage.googleapis.com/sheerwater-public-datalake/chc-mirror/experimental/SubC/`
-
-Fallback origin (used when a mirror object is missing):
-
-`https://data.chc.ucsb.edu/experimental/SubC/`
-
-Paths mirror `data.chc.ucsb.edu/experimental/SubC/` exactly.
+(`gs://sheerwater-public-datalake/chc-mirror/experimental/SubC/`), which can
+lag the origin.
 
 ## Outlook folders
 
@@ -31,13 +24,25 @@ outlook per call. In the output Zarr, scalar `time` is the init, `step` is
 
 ## Global archive paths
 
+Origin, one folder per init:
+
+```
+{lead_folder}/global/archive/{YYYYMMDD}/mme_{mean|anom}_{var}_{lead_tag}_{YYYYMMDD}.nc
+```
+
+Mirror, flat:
+
 ```
 {lead_folder}/global/archive/mme_{mean|anom}_{var}_{lead_tag}_{YYYYMMDD}.nc
 ```
 
-Example object key:
+Example origin URL:
 
-`chc-mirror/experimental/SubC/07_day/global/archive/mme_mean_pr_7d_20251201.nc`
+`https://data.chc.ucsb.edu/experimental/SubC/07_day/global/archive/20251201/mme_mean_pr_7d_20251201.nc`
+
+Before downloading, the skill reads the init folder's index and stops if any
+requested mean or anomaly file is missing, listing the nearest init folders
+from `{lead_folder}/global/archive/`.
 
 ## Variables
 
@@ -52,8 +57,8 @@ Variable acronyms: `../variable_acronyms.txt` on the SubC root (origin site).
 
 ## Probe-latest
 
-The GCS JSON API lists objects under
-`chc-mirror/experimental/SubC/{lead_folder}/global/archive/` with prefix
-`mme_mean_{var}_{lead_tag}_`. Prefer `--probe-latest <var>` so only one
-variable's dates are scanned; omitting `VAR` requires a date present for all
-six variables.
+Reads the init folders listed under `{lead_folder}/global/archive/` on the
+origin, newest first, and returns the first whose index holds the mean and
+anomaly file of every requested variable. Prefer `--probe-latest <var>`:
+omitting `VAR` needs all six variables, and recent inits can lack `tdps`, so
+the scan walks further back.

@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 import sys
 import urllib.error
@@ -33,10 +32,9 @@ from weather_skills_core.units import stamp_precip_amounts, to_standard_units
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
 _SKILL_VERSION = "0.0.7"
 
-# Public GCS mirror of data.chc.ucsb.edu (same paths under chc-mirror/).
+# Public GCS mirror of the CHC SubC archive in its flat layout (no per-init folders).
 _BUCKET = "sheerwater-public-datalake"
 _MIRROR_PREFIX = "chc-mirror/experimental/SubC"
-_GCS_API = f"https://storage.googleapis.com/storage/v1/b/{_BUCKET}/o"
 _GCS_MEDIA = f"https://storage.googleapis.com/{_BUCKET}"
 SUBC_BASE = f"{_GCS_MEDIA}/{_MIRROR_PREFIX}"
 CHC_BASE = "https://data.chc.ucsb.edu/experimental/SubC"
@@ -69,15 +67,19 @@ KIND_MEAN = "mean"
 KIND_ANOM = "anom"
 
 
-def _get_json(url: str) -> dict:
-    req = urllib.request.Request(url, headers={"Accept": "application/json"})
+def _chc_listing(path: str) -> str:
+    """HTML index of one CHC SubC folder, or "" when the folder does not exist."""
+    url = f"{CHC_BASE}/{path}/"
+    req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
     try:
         with urllib.request.urlopen(req, timeout=_HTTP_TIMEOUT) as resp:
-            return json.load(resp)
+            return resp.read().decode("utf-8", "replace")
     except urllib.error.HTTPError as exc:
-        raise DataError(f"GCS listing failed for {url!r}: HTTP {exc.code} {exc.reason}") from None
+        if exc.code == 404:
+            return ""
+        raise DataError(f"CHC listing failed for {url!r}: HTTP {exc.code} {exc.reason}") from None
     except urllib.error.URLError as exc:
-        raise DataError(f"GCS listing failed for {url!r}: {exc.reason}") from None
+        raise DataError(f"CHC listing failed for {url!r}: {exc.reason}") from None
 
 
 def _object_key(folder: str, kind: str, var: str, lead_tag: str, init: date) -> str:
@@ -93,30 +95,25 @@ def _url(folder: str, kind: str, var: str, lead_tag: str, init: date) -> str:
     return _object_url(_object_key(folder, kind, var, lead_tag, init))
 
 
-def _archive_list_prefix(folder: str, lead_tag: str, var: str) -> str:
-    return f"{_MIRROR_PREFIX}/{folder}/global/archive/mme_mean_{var}_{lead_tag}_"
-
-
 def _candidate_urls(url: str) -> list[str]:
-    """GCS mirror first; CHC origin if the URL is on the mirror prefix."""
-    urls = [url]
-    if url.startswith(SUBC_BASE):
-        urls.append(CHC_BASE + url[len(SUBC_BASE) :])
-    return urls
+    """CHC origin first (each init in its own YYYYMMDD folder), then the GCS mirror (flat)."""
+    if not url.startswith(SUBC_BASE):
+        return [url]
+    folder, name = (CHC_BASE + url[len(SUBC_BASE) :]).rsplit("/", 1)
+    stamp = name.removesuffix(".nc").rsplit("_", 1)[1]
+    return [f"{folder}/{stamp}/{name}", url]
 
 
 def _open_remote(url: str) -> xr.Dataset:
-    """Open a SubC NetCDF. GCS mirror first, then CHC origin.
+    """Open a SubC NetCDF from the first of its candidate URLs that has it.
 
     Uses fsspec ``simplecache`` so netCDF4 opens a local materialized copy.
     """
     import fsspec
 
+    opts = {"https": {"client_kwargs": {"headers": {"User-Agent": _USER_AGENT}}}}
     last_missing: Exception | None = None
-    for i, candidate in enumerate(_candidate_urls(url)):
-        opts: dict = {}
-        if i:
-            opts["https"] = {"client_kwargs": {"headers": {"User-Agent": _USER_AGENT}}}
+    for candidate in _candidate_urls(url):
         try:
             path = fsspec.open_local(f"simplecache::{candidate}", **opts)
             return xr.open_dataset(path, engine="netcdf4")
@@ -155,41 +152,31 @@ def _load_one(folder: str, kind: str, var: str, lead_tag: str, init: date):
     return kind, var, da
 
 
-def _list_init_dates(folder: str, lead_tag: str, var: str) -> list[date]:
-    """List archive init dates for one variable/outlook via the GCS JSON API."""
-    prefix = _archive_list_prefix(folder, lead_tag, var)
-    suffix = re.compile(re.escape(prefix) + r"(\d{8})\.nc$")
-    found: set[date] = set()
-    token = None
-    while True:
-        params: dict[str, str] = {"prefix": prefix, "maxResults": "1000"}
-        if token:
-            params["pageToken"] = token
-        url = f"{_GCS_API}?{urllib.parse.urlencode(params)}"
-        payload = _get_json(url)
-        for item in payload.get("items", []):
-            match = suffix.match(item.get("name", ""))
-            if not match:
-                continue
-            raw = match.group(1)
-            found.add(date(int(raw[:4]), int(raw[4:6]), int(raw[6:8])))
-        token = payload.get("nextPageToken")
-        if not token:
-            break
-    return sorted(found)
+def _list_init_dates(folder: str) -> list[date]:
+    """Init dates that have a YYYYMMDD folder in the CHC archive for one outlook."""
+    html = _chc_listing(f"{folder}/global/archive")
+    stamps = set(re.findall(r'href="(\d{8})/"', html))
+    return sorted(date(int(s[:4]), int(s[4:6]), int(s[6:])) for s in stamps)
+
+
+def _init_has_files(folder: str, lead_tag: str, init: date, variables: list[str]) -> bool:
+    """True when the init's CHC folder holds the mean and anomaly file of every variable."""
+    stamp = init.strftime("%Y%m%d")
+    html = _chc_listing(f"{folder}/global/archive/{stamp}")
+    return all(
+        f'"mme_{kind}_{var}_{lead_tag}_{stamp}.nc"' in html
+        for var in variables
+        for kind in (KIND_MEAN, KIND_ANOM)
+    )
 
 
 def _probe_latest(outlook: str, variables: list[str]) -> date | None:
-    """Latest init present for every requested variable under one outlook."""
+    """Latest init whose folder holds every requested variable under one outlook."""
     folder, lead_tag, _days = OUTLOOKS[outlook]
-    per_var: list[set[date]] = []
-    for var in variables:
-        dates = set(_list_init_dates(folder, lead_tag, var))
-        if not dates:
-            return None
-        per_var.append(dates)
-    common = set.intersection(*per_var) if per_var else set()
-    return max(common) if common else None
+    for init in reversed(_list_init_dates(folder)):
+        if _init_has_files(folder, lead_tag, init, variables):
+            return init
+    return None
 
 
 def _resolve_vars(variable) -> list[str]:
@@ -290,6 +277,17 @@ def fetch(date, outlook, bbox, variable, workers, probe_latest, **kwargs):
     vars_wanted = _resolve_vars(variable)
     if workers < 1:
         raise UsageError("--workers must be >= 1")
+
+    # Read the init folder's index before downloading: a missing init or variable
+    # fails at once and names the inits published either side.
+    if not _init_has_files(folder, lead_tag, init, vars_wanted):
+        inits = _list_init_dates(folder)
+        near = [d for d in inits if d < init][-3:] + [d for d in inits if d > init][:3]
+        raise DataError(
+            f"no SubC {outlook} {'/'.join(vars_wanted)} mean+anomaly files for init {init}; "
+            f"inits published nearby: {', '.join(d.isoformat() for d in near) or 'none'}. "
+            f"--probe-latest VAR prints the newest init that has VAR."
+        )
 
     jobs = [(KIND_MEAN, var) for var in vars_wanted] + [(KIND_ANOM, var) for var in vars_wanted]
 

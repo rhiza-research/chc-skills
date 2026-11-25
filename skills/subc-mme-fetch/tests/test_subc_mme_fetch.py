@@ -38,9 +38,25 @@ def _fake_nc(*, kind: str, var: str, fill: float, window_days: int) -> xr.Datase
     return ds
 
 
+def _archive_html(stamps):
+    return "".join(f'<a href="{s}/">{s}/</a>' for s in stamps)
+
+
+def _init_html(stamp, variables, lead_tag="7d"):
+    names = [f"mme_{k}_{v}_{lead_tag}_{stamp}.nc" for v in variables for k in ("mean", "anom")]
+    return "".join(f'<a href="{n}">{n}</a>' for n in names)
+
+
 @pytest.fixture
-def mod():
-    return load_skill("subc-mme-fetch", "fetch")
+def mod(monkeypatch):
+    m = load_skill("subc-mme-fetch", "fetch")
+    # Default archive: every variable published for the 2025-12-01 init.
+    pages = {
+        "07_day/global/archive": _archive_html(["20251201"]),
+        "07_day/global/archive/20251201": _init_html("20251201", m.VARIABLES),
+    }
+    monkeypatch.setattr(m, "_chc_listing", lambda path: pages.get(path, ""))
+    return m
 
 
 def test_url_builder(mod):
@@ -49,12 +65,11 @@ def test_url_builder(mod):
     assert url.endswith(
         "/chc-mirror/experimental/SubC/07_day/global/archive/mme_mean_ts_7d_20251201.nc"
     )
-    candidates = mod._candidate_urls(url)
-    assert candidates[0] == url
-    assert candidates[1] == (
+    chc = (
         "https://data.chc.ucsb.edu/experimental/SubC"
-        "/07_day/global/archive/mme_mean_ts_7d_20251201.nc"
+        "/07_day/global/archive/20251201/mme_mean_ts_7d_20251201.nc"
     )
+    assert mod._candidate_urls(url) == [chc, url]
 
 
 def test_normalize_field(mod):
@@ -143,14 +158,48 @@ def test_missing_file_raises(mod, monkeypatch, tmp_path):
     assert excinfo.value.code == 1
 
 
-def test_probe_latest_with_variable(mod, monkeypatch, capsys):
-    def fake_list(folder, lead_tag, var):
-        assert folder == "07_day"
-        assert lead_tag == "7d"
-        assert var == "ts"
-        return [date(2025, 12, 1), date(2025, 12, 8)]
+def test_missing_init_fails_before_download_and_lists_nearby(mod, monkeypatch, tmp_path, capsys):
+    pages = {
+        "07_day/global/archive": _archive_html(["20261029", "20261101", "20261108", "20261112"]),
+    }
+    monkeypatch.setattr(mod, "_chc_listing", lambda path: pages.get(path, ""))
 
-    monkeypatch.setattr(mod, "_list_init_dates", fake_list)
+    def fail_open(url: str):
+        raise AssertionError(f"downloaded {url}")
+
+    monkeypatch.setattr(mod, "_open_remote", fail_open)
+    with pytest.raises(SystemExit) as excinfo:
+        run_skill(
+            mod.fetch,
+            "--date",
+            "2026-11-05",
+            "--outlook",
+            "7d",
+            "-v",
+            "pr",
+            "-o",
+            str(tmp_path / "x.zarr"),
+        )
+    assert excinfo.value.code == 1
+    err = capsys.readouterr().err
+    assert "init 2026-11-05" in err
+    assert "2026-10-29, 2026-11-01, 2026-11-08, 2026-11-12" in err
+
+
+def test_init_without_the_variable_counts_as_missing(mod, monkeypatch):
+    pages = {"07_day/global/archive/20261105": _init_html("20261105", ["pr", "tas"])}
+    monkeypatch.setattr(mod, "_chc_listing", lambda path: pages.get(path, ""))
+    assert mod._init_has_files("07_day", "7d", date(2026, 11, 5), ["pr"])
+    assert not mod._init_has_files("07_day", "7d", date(2026, 11, 5), ["pr", "tdps"])
+
+
+def test_probe_latest_with_variable(mod, monkeypatch, capsys):
+    pages = {
+        "07_day/global/archive": _archive_html(["20251201", "20251208", "20251215"]),
+        "07_day/global/archive/20251215": _init_html("20251215", ["pr"]),
+        "07_day/global/archive/20251208": _init_html("20251208", ["pr", "ts"]),
+    }
+    monkeypatch.setattr(mod, "_chc_listing", lambda path: pages.get(path, ""))
     run_skill(mod.fetch, "--outlook", "7d", "--probe-latest", "ts")
     captured = capsys.readouterr()
     assert captured.out.strip() == "2025-12-08"
@@ -214,50 +263,22 @@ def test_bbox_drops_cells_that_only_touch_the_edge(mod, monkeypatch, tmp_path):
     assert list(ds["latitude"].values) == [30.0]
 
 
-def test_probe_latest_all_vars_intersection(mod, monkeypatch, capsys):
-    def fake_list(folder, lead_tag, var):
-        if var == "pr":
-            return [date(2025, 12, 1), date(2025, 12, 8)]
-        return [date(2025, 12, 1), date(2025, 12, 8), date(2025, 12, 15)]
-
-    monkeypatch.setattr(mod, "_list_init_dates", fake_list)
+def test_probe_latest_all_vars_needs_every_variable(mod, monkeypatch, capsys):
+    pages = {
+        "15_day/global/archive": _archive_html(["20251201", "20251208", "20251215"]),
+        "15_day/global/archive/20251215": _init_html("20251215", ["pr", "tas"], "15d"),
+        "15_day/global/archive/20251208": _init_html("20251208", mod.VARIABLES, "15d"),
+    }
+    monkeypatch.setattr(mod, "_chc_listing", lambda path: pages.get(path, ""))
     run_skill(mod.fetch, "--outlook", "15d", "--probe-latest")
-    # Common max across all six variables (fake returns same for non-pr).
     assert capsys.readouterr().out.strip() == "2025-12-08"
 
 
-def test_list_init_dates_parses_gcs_listing(mod, monkeypatch):
-    prefix = mod._archive_list_prefix("07_day", "7d", "ts")
-
-    def fake_get_json(url: str):
-        assert "prefix=" in url
-        return {
-            "items": [
-                {"name": f"{prefix}20251201.nc"},
-                {"name": f"{prefix}20251208.nc"},
-                {"name": f"{prefix}20251208.nc.bak"},  # ignored
-            ]
-        }
-
-    monkeypatch.setattr(mod, "_get_json", fake_get_json)
-    dates = mod._list_init_dates("07_day", "7d", "ts")
-    assert dates == [date(2025, 12, 1), date(2025, 12, 8)]
-
-
-def test_list_init_dates_paginates(mod, monkeypatch):
-    prefix = mod._archive_list_prefix("07_day", "7d", "pr")
-    calls = []
-
-    def fake_get_json(url: str):
-        calls.append(url)
-        if "pageToken" not in url:
-            return {
-                "items": [{"name": f"{prefix}20251201.nc"}],
-                "nextPageToken": "tok",
-            }
-        return {"items": [{"name": f"{prefix}20251208.nc"}]}
-
-    monkeypatch.setattr(mod, "_get_json", fake_get_json)
-    dates = mod._list_init_dates("07_day", "7d", "pr")
-    assert dates == [date(2025, 12, 1), date(2025, 12, 8)]
-    assert len(calls) == 2
+def test_list_init_dates_parses_chc_index(mod, monkeypatch):
+    html = (
+        '<a href="../">..</a><a href="?C=N;O=D">Name</a>'
+        + _archive_html(["20251208", "20251201"])
+        + '<a href="pr_mme_latest.png">png</a>'
+    )
+    monkeypatch.setattr(mod, "_chc_listing", lambda path: html)
+    assert mod._list_init_dates("07_day") == [date(2025, 12, 1), date(2025, 12, 8)]
