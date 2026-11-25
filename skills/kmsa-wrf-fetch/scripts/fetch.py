@@ -152,9 +152,27 @@ def fetch(product, root, date, bbox, variable, probe_latest, **kwargs):
         raise DataError(f"{name} needs two or more strictly increasing times.")
     init = times[0]
     if str(init)[:10] != date.isoformat():
+        # Point at the whole-output copy of this run when full_wrf has one.
+        full = f"{root.rstrip('/')}/{_PRODUCTS['full']}/wrf_full_{stamp}.nc"
+        try:
+            has_full = fs.exists(full) if remote else Path(full).expanduser().is_file()
+        except Exception:  # noqa: BLE001 — the hint is optional; keep the main error
+            has_full = False
+        if product == "full":
+            hint = ""
+        elif has_full:
+            hint = (
+                f" The run is in full_wrf: use --product full --date {date.isoformat()} "
+                "with --bbox and -v (the file is ~4 GB)."
+            )
+        else:
+            hint = (
+                f" full_wrf has no run for {date.isoformat()} either, so this run is not "
+                "available; --product full --probe-latest gives the newest full run."
+            )
         raise DataError(
             f"{name} holds the run that starts {str(init)[:16]}, not on "
-            f"{date.isoformat()}; the file is mislabeled in the archive."
+            f"{date.isoformat()}; the file is mislabeled in the archive.{hint}"
         )
     rain = ds["rainc"] + ds["rainnc"]
     if float(rain.isel(time=0).max()) != 0.0:
