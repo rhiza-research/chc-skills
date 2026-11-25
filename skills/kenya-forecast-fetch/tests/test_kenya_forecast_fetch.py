@@ -459,3 +459,30 @@ def test_fetch_precip_downscaled_drops_hindcast_init_coord(tmp_path, fetch_mod, 
     with xr.open_zarr(out, consolidated=True) as ds:
         assert "init" not in ds.variables
         assert np.datetime64(ds["time"].values, "D") == np.datetime64("2026-08-30")
+
+
+def test_missing_init_lists_the_nearest_inits_with_the_product(
+    tmp_path, fetch_mod, monkeypatch, capsys
+):
+    """Folders exist daily but a product only in some; one failed --date lists those nearby."""
+    dates = [f"2026-08-{d:02d}" for d in range(1, 32)]
+    have = {"2026-08-03", "2026-08-21", "2026-08-24", "2026-08-25"}
+    monkeypatch.setattr(fetch_mod, "_list_init_dates", lambda: dates)
+    monkeypatch.setattr(fetch_mod, "_store_exists", lambda key: key.split("/")[0] in have)
+    with pytest.raises(SystemExit) as exc:
+        run_skill(
+            fetch_mod.fetch,
+            "--dataset",
+            "precip_downscaled",
+            "--date",
+            "2026-08-12",
+            "-o",
+            str(tmp_path / "unused.zarr"),
+        )
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert (
+        "Nearest inits with 'precip_downscaled': 2026-08-03, 2026-08-21, 2026-08-24, 2026-08-25"
+        in err
+    )
+    assert "checked the 31 init folders from 2026-08-01 to 2026-08-31" in err
