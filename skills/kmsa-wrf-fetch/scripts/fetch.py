@@ -29,7 +29,7 @@ from weather_skills_core.units import (
 )
 
 # Auto-populated by the version-bump CI workflow. Do not edit manually.
-_SKILL_VERSION = "0.0.5"
+_SKILL_VERSION = "0.0.6"
 
 # Daily mirror of /home/nwp1/LIBS2/{7_day,Daily_Data} on the KMSA NWP workstation, plus
 # full_wrf/: whole WRF output files for single runs.
@@ -151,6 +151,16 @@ def fetch(product, root, date, bbox, variable, probe_latest, **kwargs):
     if times.size < 2 or not (np.diff(times) > np.timedelta64(0, "h")).all():
         raise DataError(f"{name} needs two or more strictly increasing times.")
     init = times[0]
+    # Archive files from 2026-11-04 on all carry time stamps starting 2026-11-03T03 while
+    # holding the run named in the file: move those whole days to the named date.
+    if str(init)[:13] == "2026-11-03T03" and date.isoformat() > "2026-11-03":
+        times = times + (np.datetime64(date.isoformat()) - np.datetime64("2026-11-03"))
+        init = times[0]
+        print(
+            f"{name}: archive time stamps start 2026-11-03T03 (stale); "
+            f"relabeled to start {str(init)[:16]}",
+            file=sys.stderr,
+        )
     if str(init)[:10] != date.isoformat():
         raise DataError(
             f"{name} holds the run that starts {str(init)[:16]}, not on "
