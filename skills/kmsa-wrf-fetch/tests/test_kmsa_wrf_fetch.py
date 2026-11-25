@@ -140,7 +140,21 @@ def test_refuses_mislabeled_file(tmp_path, fetch_mod, capsys):
             *("--root", str(tmp_path), "--date", "2025-11-12", "-o", str(tmp_path / "x.zarr")),
         )
     assert exc.value.code != 0
-    assert "mislabeled" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "mislabeled" in err
+    assert "full_wrf has no run for 2025-11-12" in err
+
+
+def test_mislabeled_file_points_at_full_wrf(tmp_path, fetch_mod, capsys):
+    write_run(tmp_path / "7_day/20261115_to_20261122_fcst.nc", "2026-11-03T03")
+    write_run(tmp_path / "full_wrf/wrf_full_20261115.nc", "2026-11-15T06")
+
+    with pytest.raises(SystemExit):
+        run_skill(
+            fetch_mod.fetch,
+            *("--root", str(tmp_path), "--date", "2026-11-15", "-o", str(tmp_path / "x.zarr")),
+        )
+    assert "use --product full --date 2026-11-15" in capsys.readouterr().err
 
 
 def test_refuses_already_deaccumulated_file(tmp_path, fetch_mod, capsys):

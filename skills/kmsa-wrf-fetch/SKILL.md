@@ -46,7 +46,7 @@ uv run ${CLAUDE_SKILL_DIR}/scripts/fetch.py [--product 7day|daily|full] --probe-
 ### Notes
 - The bucket is private. Set `GCLOUD_SERVICE_CREDENTIALS` (the service-account key JSON itself) or `GOOGLE_APPLICATION_CREDENTIALS` (a key file path) in the environment on the first call, including `--probe-latest`, unless Application Default Credentials are set up. Never print the value. A local `--root` needs no credentials.
 - Runs are not filled. A truncated run (the model stopped early) comes back with fewer steps; check the last `step` before computing weekly totals.
-- The skill refuses archive files that are not a raw run: files whose contents start on a different day than their name, files already de-accumulated and split by day (some daily files, March–May 2024), and the July 2023 files in an older format. The error says which.
+- The skill refuses archive files that are not a raw run: files whose contents start on a different day than their name, files already de-accumulated and split by day (some daily files, March–May 2024), and the July 2023 files in an older format. The error says which, and for a mislabeled file whether `--product full` has that run.
 - A `full` file is ~4 GB and is downloaded whole on every call, even with `--bbox`; pass `--bbox` and `-v` so only the subset is kept in memory and written.
 - For daily or weekly totals, aggregate-temporal then convert-to-totals.
 
